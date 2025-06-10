@@ -1,12 +1,27 @@
+import os
+
 from flask import Flask
+
+from . import db
 from .routes import main as main_blueprint
+from .routes.quizzes import bp as quizzes_bp
+
 
 def create_app(test_config=None):
-    app = Flask(__name__)
-
-    app.register_blueprint(main_blueprint)
-
+    app = Flask(__name__, instance_relative_config=True)
+    app.config.from_mapping(
+        DATABASE=os.path.join(app.instance_path, "app.sqlite"),
+    )
     if test_config:
         app.config.update(test_config)
+    try:
+        os.makedirs(app.instance_path, exist_ok=True)
+    except OSError:
+        pass
+
+    db.init_app(app)
+
+    app.register_blueprint(main_blueprint)
+    app.register_blueprint(quizzes_bp)
 
     return app
