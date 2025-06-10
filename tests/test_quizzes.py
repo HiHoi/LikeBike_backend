@@ -1,14 +1,36 @@
 import pytest
 
 from app import create_app
+from app.db import init_db, get_db
 
 
 @pytest.fixture
-def client():
-    app = create_app({"TESTING": True, "DATABASE": ":memory:"})
-    with app.test_client() as client:
-        yield client
+def app():
+    # 테스트용 PostgreSQL 데이터베이스 사용
+    app = create_app({
+        "TESTING": True, 
+        "DATABASE_URL": "postgresql://localhost/likebike_test"
+    })
+    
+    return app
 
+@pytest.fixture
+def client(app):
+    return app.test_client()
+
+
+@pytest.fixture
+def test_user(app):
+    """테스트용 사용자 생성"""
+    with app.app_context():
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute(
+                "INSERT INTO users (username, email) VALUES (%s, %s) RETURNING id",
+                ("testuser", "test@example.com")
+            )
+            user_id = cur.fetchone()['id']
+        return user_id
 
 def test_admin_create_update_delete_quiz(client):
     # create
@@ -34,7 +56,7 @@ def test_admin_create_update_delete_quiz(client):
     assert res.status_code == 204
 
 
-def test_user_attempt_quiz(client):
+def test_user_attempt_quiz(client, test_user):
     # admin creates quiz first
     res = client.post(
         "/admin/quizzes",
@@ -46,7 +68,7 @@ def test_user_attempt_quiz(client):
     # user attempts correctly
     res = client.post(
         f"/quizzes/{quiz_id}/attempt",
-        json={"user_id": 1, "answer": "42"},
+        json={"user_id": test_user, "answer": "42"},
     )
     assert res.status_code == 200
     assert res.get_json()["is_correct"] is True
@@ -54,7 +76,7 @@ def test_user_attempt_quiz(client):
     # user attempts wrong answer
     res = client.post(
         f"/quizzes/{quiz_id}/attempt",
-        json={"user_id": 1, "answer": "0"},
+        json={"user_id": test_user, "answer": "0"},
     )
     assert res.status_code == 200
     assert res.get_json()["is_correct"] is False

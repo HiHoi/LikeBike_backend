@@ -9,11 +9,16 @@ from .routes.quizzes import bp as quizzes_bp
 
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
+    
+    # PostgreSQL 연결 설정
     app.config.from_mapping(
-        DATABASE=os.path.join(app.instance_path, "app.sqlite"),
+        DATABASE_URL=os.environ.get('DATABASE_URL', 'postgresql://localhost/likebike'),
+
     )
+    
     if test_config:
         app.config.update(test_config)
+    
     try:
         os.makedirs(app.instance_path, exist_ok=True)
     except OSError:
