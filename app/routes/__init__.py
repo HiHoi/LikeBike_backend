@@ -1,7 +1,8 @@
 from flask import Blueprint
 
-main = Blueprint('main', __name__)
+main = Blueprint("main", __name__)
 
-@main.route('/test')
+
+@main.route("/test")
 def test_route():
-    return 'hello world'
+    return "hello world"
