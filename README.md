@@ -12,6 +12,8 @@ This project provides a small Flask backend with a simple project structure that
 │       └── __init__.py      # blueprint with routes
 ├── run.py                   # entry point for development server
 ├── requirements.txt         # Python dependencies
+├── schema.sql               # PostgreSQL schema
+├── docs/ERD.md              # ER diagram
 └── tests
     └── test_routes.py       # sample tests
 ```
@@ -36,6 +38,12 @@ python run.py
 ```
 
 Visit `http://localhost:5000/test` and you should see `hello world`.
+
+## Database Schema
+
+The PostgreSQL schema is defined in `schema.sql`. It outlines tables for users,
+quizzes, bike usage logs, news, user routes and reward tracking. See
+`docs/ERD.md` for the entity relationship diagram.
 
 ## Running Tests
 
