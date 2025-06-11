@@ -39,6 +39,14 @@ python run.py
 
 Visit `http://localhost:5000/test` and you should see `hello world`.
 
+### Generating quizzes with Clova X
+
+There is an administrative endpoint that generates a quiz using Naver Clova X.
+Send a POST request to `/admin/quizzes/generate` with a JSON body containing a
+`prompt` field. The service will call Clova X, create a quiz record and return
+the created question and answer. Set the `CLOVA_API_KEY` environment variable to
+your Clova API key.
+
 ## Database Schema
 
 The PostgreSQL schema is defined in `schema.sql`. It outlines tables for users,
