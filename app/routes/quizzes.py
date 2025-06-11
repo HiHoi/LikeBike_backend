@@ -21,16 +21,21 @@ def create_quiz():
     correct_answer = data.get("correct_answer")
     if not question or not correct_answer:
         return jsonify({"error": "question and correct_answer required"}), 400
-    
+
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO quizzes (question, correct_answer) VALUES (%s, %s) RETURNING id",
             (question, correct_answer),
         )
-        quiz_id = cur.fetchone()['id']
-    
-    return jsonify({"id": quiz_id, "question": question, "correct_answer": correct_answer}), 201
+        quiz_id = cur.fetchone()["id"]
+
+    return (
+        jsonify(
+            {"id": quiz_id, "question": question, "correct_answer": correct_answer}
+        ),
+        201,
+    )
 
 
 @bp.route("/admin/quizzes/<int:quiz_id>", methods=["PUT"])
@@ -43,7 +48,7 @@ def update_quiz(quiz_id):
     correct_answer = data.get("correct_answer")
     if not question or not correct_answer:
         return jsonify({"error": "question and correct_answer required"}), 400
-    
+
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
@@ -53,7 +58,7 @@ def update_quiz(quiz_id):
         result = cur.fetchone()
         if not result:
             return jsonify({"error": "quiz not found"}), 404
-    
+
     return jsonify(dict(result)), 200
 
 
@@ -62,14 +67,15 @@ def delete_quiz(quiz_id):
     admin_check = _require_admin()
     if admin_check:
         return admin_check
-    
+
     db = get_db()
     with db.cursor() as cur:
         cur.execute("DELETE FROM quizzes WHERE id = %s", (quiz_id,))
         if cur.rowcount == 0:
             return jsonify({"error": "quiz not found"}), 404
-    
+
     return "", 204
+
 
 @bp.route("/quizzes", methods=["GET"])
 def list_quizzes():
@@ -77,7 +83,7 @@ def list_quizzes():
     with db.cursor() as cur:
         cur.execute("SELECT id, question FROM quizzes")
         quizzes = cur.fetchall()
-    
+
     return jsonify(quizzes), 200
 
 
@@ -88,7 +94,7 @@ def attempt_quiz(quiz_id):
     answer = data.get("answer")
     if not user_id or not answer:
         return jsonify({"error": "user_id and answer required"}), 400
-    
+
     db = get_db()
     with db.cursor() as cur:
         # 퀴즈 정보 조회
@@ -96,13 +102,13 @@ def attempt_quiz(quiz_id):
         quiz = cur.fetchone()
         if not quiz:
             return jsonify({"error": "quiz not found"}), 404
-        
-        is_correct = answer == quiz['correct_answer']
-        
+
+        is_correct = answer == quiz["correct_answer"]
+
         # 시도 기록 저장
         cur.execute(
             "INSERT INTO user_quiz_attempts (user_id, quiz_id, is_correct) VALUES (%s, %s, %s)",
             (user_id, quiz_id, is_correct),
         )
-    
+
     return jsonify({"is_correct": is_correct}), 200

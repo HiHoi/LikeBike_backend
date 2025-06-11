@@ -1,18 +1,18 @@
 import pytest
 
 from app import create_app
-from app.db import init_db, get_db
+from app.db import get_db, init_db
 
 
 @pytest.fixture
 def app():
     # 테스트용 PostgreSQL 데이터베이스 사용
-    app = create_app({
-        "TESTING": True, 
-        "DATABASE_URL": "postgresql://localhost/likebike_test"
-    })
-    
+    app = create_app(
+        {"TESTING": True, "DATABASE_URL": "postgresql://localhost/likebike_test"}
+    )
+
     return app
+
 
 @pytest.fixture
 def client(app):
@@ -27,10 +27,11 @@ def test_user(app):
         with db.cursor() as cur:
             cur.execute(
                 "INSERT INTO users (username, email) VALUES (%s, %s) RETURNING id",
-                ("testuser", "test@example.com")
+                ("testuser", "test@example.com"),
             )
-            user_id = cur.fetchone()['id']
+            user_id = cur.fetchone()["id"]
         return user_id
+
 
 def test_admin_create_update_delete_quiz(client):
     # create

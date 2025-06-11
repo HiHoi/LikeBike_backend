@@ -1,7 +1,8 @@
 import os
+
+import click
 import psycopg2
 import psycopg2.extras
-import click
 from flask import current_app, g
 from flask.cli import with_appcontext
 
@@ -10,19 +11,19 @@ SCHEMA_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "schema.s
 
 def get_db():
     if "db" not in g:
-        if 'DATABASE_URL' in current_app.config:
+        if "DATABASE_URL" in current_app.config:
             g.db = psycopg2.connect(
-                current_app.config['DATABASE_URL'],
-                cursor_factory=psycopg2.extras.RealDictCursor
+                current_app.config["DATABASE_URL"],
+                cursor_factory=psycopg2.extras.RealDictCursor,
             )
         else:
             g.db = psycopg2.connect(
-                host=current_app.config.get('DB_HOST', 'localhost'),
-                port=current_app.config.get('DB_PORT', 5432),
-                database=current_app.config.get('DB_NAME', 'likebike'),
-                user=current_app.config.get('DB_USER', os.environ.get('USER')),
-                password=current_app.config.get('DB_PASSWORD', ''),
-                cursor_factory=psycopg2.extras.RealDictCursor
+                host=current_app.config.get("DB_HOST", "localhost"),
+                port=current_app.config.get("DB_PORT", 5432),
+                database=current_app.config.get("DB_NAME", "likebike"),
+                user=current_app.config.get("DB_USER", os.environ.get("USER")),
+                password=current_app.config.get("DB_PASSWORD", ""),
+                cursor_factory=psycopg2.extras.RealDictCursor,
             )
         g.db.autocommit = True
     return g.db
@@ -41,18 +42,18 @@ def init_db():
             cur.execute(f.read())
 
 
-@click.command('init-db')
+@click.command("init-db")
 @with_appcontext
 def init_db_command():
     """Clear the existing data and create new tables."""
     init_db()
-    click.echo('Initialized the database.')
+    click.echo("Initialized the database.")
 
 
 def init_app(app):
     app.teardown_appcontext(close_db)
     app.cli.add_command(init_db_command)
     # 개발 환경에서만 자동 초기화
-    if app.config.get('TESTING'):
+    if app.config.get("TESTING"):
         with app.app_context():
             init_db()
