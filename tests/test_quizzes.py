@@ -26,8 +26,8 @@ def test_user(app):
         db = get_db()
         with db.cursor() as cur:
             cur.execute(
-                "INSERT INTO users (username, email) VALUES (%s, %s) RETURNING id",
-                ("testuser", "test@example.com"),
+                "INSERT INTO users (kakao_id, username, email) VALUES (%s, %s, %s) RETURNING id",
+                ("test_kakao_123", "testuser", "test@example.com"),
             )
             user_id = cur.fetchone()["id"]
         return user_id
