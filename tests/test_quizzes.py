@@ -26,8 +26,8 @@ def test_user(app):
         db = get_db()
         with db.cursor() as cur:
             cur.execute(
-                "INSERT INTO users (username, email) VALUES (%s, %s) RETURNING id",
-                ("testuser", "test@example.com"),
+                "INSERT INTO users (kakao_id, username, email) VALUES (%s, %s, %s) RETURNING id",
+                ("test_kakao_123", "testuser", "test@example.com"),
             )
             user_id = cur.fetchone()["id"]
         return user_id
@@ -81,3 +81,22 @@ def test_user_attempt_quiz(client, test_user):
     )
     assert res.status_code == 200
     assert res.get_json()["is_correct"] is False
+
+
+def test_generate_quiz(client, monkeypatch):
+    async def fake_generate(prompt, api_key):
+        assert api_key == "dummy"
+        assert prompt == "make a quiz"
+        return {"question": "dummy q", "correct_answer": "dummy a"}
+
+    monkeypatch.setenv("CLOVA_API_KEY", "dummy")
+    monkeypatch.setattr("app.routes.quizzes._generate_from_clova", fake_generate)
+
+    res = client.post(
+        "/admin/quizzes/generate",
+        json={"prompt": "make a quiz"},
+        headers={"X-Admin": "true"},
+    )
+    assert res.status_code == 201
+    assert res.get_json()["question"] == "dummy q"
+    assert res.get_json()["correct_answer"] == "dummy a"
