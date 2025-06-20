@@ -4,8 +4,8 @@ options:
   env:
     - name: FLASK_ENV
       value: production
-  ports: 5000
-  start: gunicorn -b 0.0.0.0:5000 app:app
+  ports: 3000
+  start: gunicorn -b 0.0.0.0:3000 app:app
 context:
   git:
     url: https://github.com/HiHoi/LikeBike_backend.git
