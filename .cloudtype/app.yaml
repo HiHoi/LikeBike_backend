@@ -1,11 +1,13 @@
-name: flask
+name: likebike-backend
 app: python@3.11
 options:
   env:
     - name: FLASK_ENV
       value: production
+    - name: DATABASE_URL
+      value: ${DATABASE_URL}
   ports: 3000
-  start: gunicorn -b 0.0.0.0:3000 app:app
+  start: gunicorn -b 0.0.0.0:3000 run:app
 context:
   git:
     url: https://github.com/HiHoi/LikeBike_backend.git
