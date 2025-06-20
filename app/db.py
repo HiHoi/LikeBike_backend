@@ -11,21 +11,35 @@ SCHEMA_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "schema.s
 
 def get_db():
     if "db" not in g:
-        if "DATABASE_URL" in current_app.config:
-            g.db = psycopg2.connect(
-                current_app.config["DATABASE_URL"],
-                cursor_factory=psycopg2.extras.RealDictCursor,
-            )
-        else:
-            g.db = psycopg2.connect(
-                host=current_app.config.get("DB_HOST", "localhost"),
-                port=current_app.config.get("DB_PORT", 5432),
-                database=current_app.config.get("DB_NAME", "likebike"),
-                user=current_app.config.get("DB_USER", os.environ.get("USER")),
-                password=current_app.config.get("DB_PASSWORD", ""),
-                cursor_factory=psycopg2.extras.RealDictCursor,
-            )
-        g.db.autocommit = True
+        try:
+            # DATABASE_URL 우선 사용
+            database_url = current_app.config.get("DATABASE_URL") or os.environ.get("DATABASE_URL")
+            
+            if database_url and database_url.startswith('postgresql://'):
+                g.db = psycopg2.connect(
+                    database_url,
+                    cursor_factory=psycopg2.extras.RealDictCursor,
+                )
+            else:
+                # 개별 환경변수로 연결
+                connection_params = {
+                    'host': os.environ.get("DB_HOST", current_app.config.get("DB_HOST", "localhost")),
+                    'port': int(os.environ.get("DB_PORT", current_app.config.get("DB_PORT", 5432))),
+                    'database': os.environ.get("DB_NAME", current_app.config.get("DB_NAME", "likebike")),
+                    'user': os.environ.get("DB_USER", current_app.config.get("DB_USER", os.environ.get("USER"))),
+                    'password': os.environ.get("DB_PASSWORD", current_app.config.get("DB_PASSWORD", "")),
+                    'cursor_factory': psycopg2.extras.RealDictCursor
+                }
+                
+                print(f"Connecting to database: {connection_params['host']}:{connection_params['port']}")
+                g.db = psycopg2.connect(**connection_params)
+            
+            g.db.autocommit = True
+            
+        except Exception as e:
+            print(f"Database connection failed: {e}")
+            raise
+            
     return g.db
 
 
