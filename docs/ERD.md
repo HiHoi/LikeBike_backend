@@ -4,6 +4,7 @@
 erDiagram
     users {
         integer id PK
+        varchar kakao_id
         varchar username
         varchar email
         integer points

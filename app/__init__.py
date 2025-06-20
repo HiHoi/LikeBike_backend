@@ -5,7 +5,9 @@ from flask import Flask
 from . import db
 from .routes import main as main_blueprint
 from .routes.news import bp as news_bp
+from .routes.bike_logs import bp as bike_logs_bp
 from .routes.quizzes import bp as quizzes_bp
+from .routes.users import bp as users_bp
 
 
 def create_app(test_config=None):
@@ -29,5 +31,7 @@ def create_app(test_config=None):
     app.register_blueprint(main_blueprint)
     app.register_blueprint(quizzes_bp)
     app.register_blueprint(news_bp)
+    app.register_blueprint(users_bp)
+    app.register_blueprint(bike_logs_bp)
 
     return app
