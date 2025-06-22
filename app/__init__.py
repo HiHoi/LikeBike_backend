@@ -37,9 +37,6 @@ def create_app(test_config=None):
             DATABASE_URL=os.environ.get("DATABASE_URL", "postgresql://localhost/likebike"),
         )
 
-    if test_config:
-        app.config.update(test_config)
-
     try:
         os.makedirs(app.instance_path, exist_ok=True)
     except OSError:
