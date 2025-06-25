@@ -1,4 +1,6 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, request
+
+from ..utils.responses import make_response
 
 from ..db import get_db
 
@@ -10,7 +12,7 @@ def create_bike_log(user_id):
     data = request.get_json() or {}
     description = data.get("description")
     if not description:
-        return jsonify({"error": "description required"}), 400
+        return make_response({"error": "description required"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
@@ -20,7 +22,7 @@ def create_bike_log(user_id):
         )
         log = cur.fetchone()
 
-    return jsonify(dict(log)), 201
+    return make_response(dict(log), 201)
 
 
 @bp.route("/users/<int:user_id>/bike-logs", methods=["GET"])
@@ -33,7 +35,7 @@ def list_bike_logs(user_id):
         )
         logs = cur.fetchall()
 
-    return jsonify(logs), 200
+    return make_response(logs)
 
 
 @bp.route("/bike-logs/<int:log_id>", methods=["PUT"])
@@ -41,7 +43,7 @@ def update_bike_log(log_id):
     data = request.get_json() or {}
     description = data.get("description")
     if description is None:
-        return jsonify({"error": "description required"}), 400
+        return make_response({"error": "description required"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
@@ -51,9 +53,9 @@ def update_bike_log(log_id):
         )
         log = cur.fetchone()
         if not log:
-            return jsonify({"error": "log not found"}), 404
+            return make_response({"error": "log not found"}, 404)
 
-    return jsonify(dict(log)), 200
+    return make_response(dict(log))
 
 
 @bp.route("/bike-logs/<int:log_id>", methods=["DELETE"])
@@ -62,6 +64,6 @@ def delete_bike_log(log_id):
     with db.cursor() as cur:
         cur.execute("DELETE FROM bike_usage_logs WHERE id = %s", (log_id,))
         if cur.rowcount == 0:
-            return jsonify({"error": "log not found"}), 404
+            return make_response({"error": "log not found"}, 404)
 
-    return "", 204
+    return make_response(None, 204)

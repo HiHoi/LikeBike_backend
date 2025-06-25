@@ -1,4 +1,6 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, request
+
+from ..utils.responses import make_response
 
 from ..db import get_db
 
@@ -7,7 +9,7 @@ bp = Blueprint("news", __name__)
 
 def _require_admin():
     if request.headers.get("X-Admin") != "true":
-        return jsonify({"error": "admin only"}), 403
+        return make_response({"error": "admin only"}, 403)
     return None
 
 
@@ -20,7 +22,7 @@ def create_news():
     title = data.get("title")
     content = data.get("content")
     if not title or not content:
-        return jsonify({"error": "title and content required"}), 400
+        return make_response({"error": "title and content required"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
@@ -29,15 +31,13 @@ def create_news():
             (title, content),
         )
         row = cur.fetchone()
-    return (
-        jsonify(
-            {
-                "id": row["id"],
-                "title": title,
-                "content": content,
-                "published_at": row["published_at"],
-            }
-        ),
+    return make_response(
+        {
+            "id": row["id"],
+            "title": title,
+            "content": content,
+            "published_at": row["published_at"],
+        },
         201,
     )
 
@@ -51,7 +51,7 @@ def update_news(news_id):
     title = data.get("title")
     content = data.get("content")
     if not title or not content:
-        return jsonify({"error": "title and content required"}), 400
+        return make_response({"error": "title and content required"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
@@ -61,8 +61,8 @@ def update_news(news_id):
         )
         result = cur.fetchone()
         if not result:
-            return jsonify({"error": "news not found"}), 404
-    return jsonify(dict(result)), 200
+            return make_response({"error": "news not found"}, 404)
+    return make_response(dict(result))
 
 
 @bp.route("/admin/news/<int:news_id>", methods=["DELETE"])
@@ -74,8 +74,8 @@ def delete_news(news_id):
     with db.cursor() as cur:
         cur.execute("DELETE FROM news WHERE id = %s", (news_id,))
         if cur.rowcount == 0:
-            return jsonify({"error": "news not found"}), 404
-    return "", 204
+            return make_response({"error": "news not found"}, 404)
+    return make_response(None, 204)
 
 
 @bp.route("/news", methods=["GET"])
@@ -86,7 +86,7 @@ def list_news():
             "SELECT id, title, content, published_at FROM news ORDER BY published_at DESC"
         )
         rows = cur.fetchall()
-    return jsonify(rows), 200
+    return make_response(rows)
 
 
 @bp.route("/news/<int:news_id>", methods=["GET"])
@@ -99,5 +99,5 @@ def get_news(news_id):
         )
         row = cur.fetchone()
         if not row:
-            return jsonify({"error": "news not found"}), 404
-    return jsonify(dict(row)), 200
+            return make_response({"error": "news not found"}, 404)
+    return make_response(dict(row))

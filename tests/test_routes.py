@@ -13,4 +13,8 @@ def client():
 def test_test_route(client):
     response = client.get("/test")
     assert response.status_code == 200
-    assert response.data.decode("utf-8") == "hello world"
+    assert response.get_json() == {
+        "code": 200,
+        "message": "OK",
+        "data": ["hello world"],
+    }

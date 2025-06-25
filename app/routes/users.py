@@ -4,7 +4,9 @@ import asyncio
 from typing import Any, Dict
 
 import aiohttp
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, request
+
+from ..utils.responses import make_response
 
 from ..db import get_db
 
@@ -26,12 +28,12 @@ def register_user():
     data = request.get_json() or {}
     access_token = data.get("access_token")
     if not access_token:
-        return jsonify({"error": "access_token required"}), 400
+        return make_response({"error": "access_token required"}, 400)
 
     try:
         kakao_info = asyncio.run(fetch_kakao_user_info(access_token))
     except Exception:
-        return jsonify({"error": "invalid kakao token"}), 400
+        return make_response({"error": "invalid kakao token"}, 400)
 
     kakao_id = str(kakao_info.get("id"))
     kakao_account = kakao_info.get("kakao_account", {})
@@ -54,7 +56,7 @@ def register_user():
                 (kakao_id, username, email),
             )
             user_id = cur.fetchone()["id"]
-    return jsonify({"id": user_id, "username": username, "email": email}), 201
+    return make_response({"id": user_id, "username": username, "email": email}, 201)
 
 
 @bp.route("/users/<int:user_id>", methods=["PUT"])
@@ -63,7 +65,7 @@ def update_user(user_id: int):
     username = data.get("username")
     email = data.get("email")
     if not username and not email:
-        return jsonify({"error": "nothing to update"}), 400
+        return make_response({"error": "nothing to update"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
@@ -73,9 +75,9 @@ def update_user(user_id: int):
         )
         updated = cur.fetchone()
         if not updated:
-            return jsonify({"error": "user not found"}), 404
+            return make_response({"error": "user not found"}, 404)
 
-    return jsonify(dict(updated)), 200
+    return make_response(dict(updated))
 
 
 @bp.route("/users/<int:user_id>", methods=["DELETE"])
@@ -84,6 +86,6 @@ def delete_user(user_id: int):
     with db.cursor() as cur:
         cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
         if cur.rowcount == 0:
-            return jsonify({"error": "user not found"}), 404
+            return make_response({"error": "user not found"}, 404)
 
-    return "", 204
+    return make_response(None, 204)

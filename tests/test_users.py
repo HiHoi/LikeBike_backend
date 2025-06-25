@@ -29,11 +29,11 @@ def test_register_update_delete_user(client, monkeypatch, app):
 
     res = client.post("/users", json={"access_token": "token"})
     assert res.status_code == 201
-    user_id = res.get_json()["id"]
+    user_id = res.get_json()["data"][0]["id"]
 
     res = client.put(f"/users/{user_id}", json={"username": "updated"})
     assert res.status_code == 200
-    assert res.get_json()["username"] == "updated"
+    assert res.get_json()["data"][0]["username"] == "updated"
 
     res = client.delete(f"/users/{user_id}")
     assert res.status_code == 204
