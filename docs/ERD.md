@@ -12,8 +12,9 @@ erDiagram
     }
     quizzes {
         integer id PK
-        text question
-        text correct_answer
+        string question
+        string correct_answer
+        string[] answers
         timestamp created_at
     }
     user_quiz_attempts {
@@ -26,20 +27,20 @@ erDiagram
     bike_usage_logs {
         integer id PK
         integer user_id FK
-        text description
+        string description
         timestamp usage_time
     }
     news {
         integer id PK
         varchar title
-        text content
+        string content
         timestamp published_at
     }
     routes {
         integer id PK
         integer user_id FK
         varchar name
-        text description
+        string description
         timestamp created_at
     }
     rewards {
@@ -51,9 +52,9 @@ erDiagram
         timestamp created_at
     }
 
-    users ||--o{ user_quiz_attempts : "" 
-    quizzes ||--o{ user_quiz_attempts : "" 
-    users ||--o{ bike_usage_logs : "" 
-    users ||--o{ routes : "" 
-    users ||--o{ rewards : "" 
+    users ||--o{ user_quiz_attempts : ""
+    quizzes ||--o{ user_quiz_attempts : ""
+    users ||--o{ bike_usage_logs : ""
+    users ||--o{ routes : ""
+    users ||--o{ rewards : ""
 ```
