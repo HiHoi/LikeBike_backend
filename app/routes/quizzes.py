@@ -2,7 +2,9 @@ import asyncio
 import os
 
 import aiohttp
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, request
+
+from ..utils.responses import make_response
 
 from ..db import get_db
 
@@ -25,7 +27,7 @@ async def _generate_from_clova(prompt: str, api_key: str) -> dict:
 
 def _require_admin():
     if request.headers.get("X-Admin") != "true":
-        return jsonify({"error": "admin only"}), 403
+        return make_response({"error": "admin only"}, 403)
     return None
 
 
@@ -38,7 +40,7 @@ def create_quiz():
     question = data.get("question")
     correct_answer = data.get("correct_answer")
     if not question or not correct_answer:
-        return jsonify({"error": "question and correct_answer required"}), 400
+        return make_response({"error": "question and correct_answer required"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
@@ -48,10 +50,8 @@ def create_quiz():
         )
         quiz_id = cur.fetchone()["id"]
 
-    return (
-        jsonify(
-            {"id": quiz_id, "question": question, "correct_answer": correct_answer}
-        ),
+    return make_response(
+        {"id": quiz_id, "question": question, "correct_answer": correct_answer},
         201,
     )
 
@@ -65,7 +65,7 @@ def update_quiz(quiz_id):
     question = data.get("question")
     correct_answer = data.get("correct_answer")
     if not question or not correct_answer:
-        return jsonify({"error": "question and correct_answer required"}), 400
+        return make_response({"error": "question and correct_answer required"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
@@ -75,9 +75,9 @@ def update_quiz(quiz_id):
         )
         result = cur.fetchone()
         if not result:
-            return jsonify({"error": "quiz not found"}), 404
+            return make_response({"error": "quiz not found"}, 404)
 
-    return jsonify(dict(result)), 200
+    return make_response(dict(result))
 
 
 @bp.route("/admin/quizzes/<int:quiz_id>", methods=["DELETE"])
@@ -90,9 +90,9 @@ def delete_quiz(quiz_id):
     with db.cursor() as cur:
         cur.execute("DELETE FROM quizzes WHERE id = %s", (quiz_id,))
         if cur.rowcount == 0:
-            return jsonify({"error": "quiz not found"}), 404
+            return make_response({"error": "quiz not found"}, 404)
 
-    return "", 204
+    return make_response(None, 204)
 
 
 @bp.route("/quizzes", methods=["GET"])
@@ -102,7 +102,7 @@ def list_quizzes():
         cur.execute("SELECT id, question FROM quizzes")
         quizzes = cur.fetchall()
 
-    return jsonify(quizzes), 200
+    return make_response(quizzes)
 
 
 @bp.route("/quizzes/<int:quiz_id>/attempt", methods=["POST"])
@@ -111,7 +111,7 @@ def attempt_quiz(quiz_id):
     user_id = data.get("user_id")
     answer = data.get("answer")
     if not user_id or not answer:
-        return jsonify({"error": "user_id and answer required"}), 400
+        return make_response({"error": "user_id and answer required"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
@@ -119,7 +119,7 @@ def attempt_quiz(quiz_id):
         cur.execute("SELECT correct_answer FROM quizzes WHERE id = %s", (quiz_id,))
         quiz = cur.fetchone()
         if not quiz:
-            return jsonify({"error": "quiz not found"}), 404
+            return make_response({"error": "quiz not found"}, 404)
 
         is_correct = answer == quiz["correct_answer"]
 
@@ -129,7 +129,7 @@ def attempt_quiz(quiz_id):
             (user_id, quiz_id, is_correct),
         )
 
-    return jsonify({"is_correct": is_correct}), 200
+    return make_response({"is_correct": is_correct})
 
 
 @bp.route("/admin/quizzes/generate", methods=["POST"])
@@ -140,21 +140,21 @@ def generate_quiz():
     data = request.get_json() or {}
     prompt = data.get("prompt")
     if not prompt:
-        return jsonify({"error": "prompt required"}), 400
+        return make_response({"error": "prompt required"}, 400)
 
     api_key = os.environ.get("CLOVA_API_KEY")
     if not api_key:
-        return jsonify({"error": "CLOVA_API_KEY not set"}), 500
+        return make_response({"error": "CLOVA_API_KEY not set"}, 500)
 
     try:
         result = asyncio.run(_generate_from_clova(prompt, api_key))
     except Exception:  # pragma: no cover - network errors
-        return jsonify({"error": "Failed to call Clova X"}), 502
+        return make_response({"error": "Failed to call Clova X"}, 502)
 
     question = result.get("question")
     correct_answer = result.get("correct_answer")
     if not question or not correct_answer:
-        return jsonify({"error": "invalid response from Clova X"}), 502
+        return make_response({"error": "invalid response from Clova X"}, 502)
 
     db = get_db()
     with db.cursor() as cur:
@@ -164,9 +164,7 @@ def generate_quiz():
         )
         quiz_id = cur.fetchone()["id"]
 
-    return (
-        jsonify(
-            {"id": quiz_id, "question": question, "correct_answer": correct_answer}
-        ),
+    return make_response(
+        {"id": quiz_id, "question": question, "correct_answer": correct_answer},
         201,
     )

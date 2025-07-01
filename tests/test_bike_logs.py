@@ -36,12 +36,12 @@ def test_bike_log_crud(client, test_user):
         json={"description": "morning ride"},
     )
     assert res.status_code == 201
-    log_id = res.get_json()["id"]
+    log_id = res.get_json()["data"][0]["id"]
 
     # list logs
     res = client.get(f"/users/{test_user}/bike-logs")
     assert res.status_code == 200
-    logs = res.get_json()
+    logs = res.get_json()["data"]
     assert len(logs) == 1
     assert logs[0]["description"] == "morning ride"
 
@@ -51,7 +51,7 @@ def test_bike_log_crud(client, test_user):
         json={"description": "evening ride"},
     )
     assert res.status_code == 200
-    assert res.get_json()["description"] == "evening ride"
+    assert res.get_json()["data"][0]["description"] == "evening ride"
 
     # delete log
     res = client.delete(f"/bike-logs/{log_id}")
@@ -60,4 +60,4 @@ def test_bike_log_crud(client, test_user):
     # list logs after deletion
     res = client.get(f"/users/{test_user}/bike-logs")
     assert res.status_code == 200
-    assert res.get_json() == []
+    assert res.get_json()["data"] == []

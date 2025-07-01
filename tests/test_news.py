@@ -24,7 +24,7 @@ def test_admin_create_update_delete_news(client):
         headers={"X-Admin": "true"},
     )
     assert res.status_code == 201
-    news_id = res.get_json()["id"]
+    news_id = res.get_json()["data"][0]["id"]
 
     res = client.put(
         f"/admin/news/{news_id}",
@@ -32,7 +32,7 @@ def test_admin_create_update_delete_news(client):
         headers={"X-Admin": "true"},
     )
     assert res.status_code == 200
-    assert res.get_json()["title"] == "T1 updated"
+    assert res.get_json()["data"][0]["title"] == "T1 updated"
 
     res = client.delete(f"/admin/news/{news_id}", headers={"X-Admin": "true"})
     assert res.status_code == 204
@@ -52,4 +52,4 @@ def test_list_news(client):
 
     res = client.get("/news")
     assert res.status_code == 200
-    assert len(res.get_json()) >= 2
+    assert len(res.get_json()["data"]) >= 2

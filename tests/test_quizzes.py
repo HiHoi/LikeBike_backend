@@ -41,7 +41,7 @@ def test_admin_create_update_delete_quiz(client):
         headers={"X-Admin": "true"},
     )
     assert res.status_code == 201
-    quiz_id = res.get_json()["id"]
+    quiz_id = res.get_json()["data"][0]["id"]
 
     # update
     res = client.put(
@@ -50,7 +50,7 @@ def test_admin_create_update_delete_quiz(client):
         headers={"X-Admin": "true"},
     )
     assert res.status_code == 200
-    assert res.get_json()["question"] == "Q1 updated"
+    assert res.get_json()["data"][0]["question"] == "Q1 updated"
 
     # delete
     res = client.delete(f"/admin/quizzes/{quiz_id}", headers={"X-Admin": "true"})
@@ -64,7 +64,7 @@ def test_user_attempt_quiz(client, test_user):
         json={"question": "What?", "correct_answer": "42"},
         headers={"X-Admin": "true"},
     )
-    quiz_id = res.get_json()["id"]
+    quiz_id = res.get_json()["data"][0]["id"]
 
     # user attempts correctly
     res = client.post(
@@ -72,7 +72,7 @@ def test_user_attempt_quiz(client, test_user):
         json={"user_id": test_user, "answer": "42"},
     )
     assert res.status_code == 200
-    assert res.get_json()["is_correct"] is True
+    assert res.get_json()["data"][0]["is_correct"] is True
 
     # user attempts wrong answer
     res = client.post(
@@ -80,7 +80,7 @@ def test_user_attempt_quiz(client, test_user):
         json={"user_id": test_user, "answer": "0"},
     )
     assert res.status_code == 200
-    assert res.get_json()["is_correct"] is False
+    assert res.get_json()["data"][0]["is_correct"] is False
 
 
 def test_generate_quiz(client, monkeypatch):
@@ -98,5 +98,5 @@ def test_generate_quiz(client, monkeypatch):
         headers={"X-Admin": "true"},
     )
     assert res.status_code == 201
-    assert res.get_json()["question"] == "dummy q"
-    assert res.get_json()["correct_answer"] == "dummy a"
+    assert res.get_json()["data"][0]["question"] == "dummy q"
+    assert res.get_json()["data"][0]["correct_answer"] == "dummy a"
