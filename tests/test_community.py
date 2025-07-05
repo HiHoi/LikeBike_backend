@@ -2,6 +2,7 @@ import pytest
 
 from app import create_app
 from app.db import get_db
+from tests.test_helpers import get_test_jwt_token, get_auth_headers
 
 
 @pytest.fixture
@@ -30,15 +31,18 @@ def test_user(app):
 
 
 def test_community_post_crud(client, test_user):
+    token = get_test_jwt_token(test_user, f"user_{test_user}", f"user{test_user}@example.com")
+    headers = get_auth_headers(token)
+    
     # create post
     res = client.post(
         "/community/posts",
         json={
-            "user_id": test_user,
             "title": "자전거 추천 경로",
             "content": "한강공원 라이딩 코스 추천합니다!",
             "post_type": "route_share"
         },
+        headers=headers
     )
     assert res.status_code == 201
     post_data = res.get_json()["data"][0]
@@ -59,16 +63,16 @@ def test_community_post_crud(client, test_user):
     res = client.post(
         f"/community/posts/{post_id}/comments",
         json={
-            "user_id": test_user,
             "content": "좋은 정보 감사합니다!"
         },
+        headers=headers
     )
     assert res.status_code == 201
 
     # toggle like
     res = client.post(
         f"/community/posts/{post_id}/like",
-        json={"user_id": test_user},
+        headers=headers
     )
     assert res.status_code == 200
     like_data = res.get_json()["data"][0]
@@ -78,7 +82,7 @@ def test_community_post_crud(client, test_user):
     # toggle like again (unlike)
     res = client.post(
         f"/community/posts/{post_id}/like",
-        json={"user_id": test_user},
+        headers=headers
     )
     assert res.status_code == 200
     unlike_data = res.get_json()["data"][0]
@@ -87,15 +91,19 @@ def test_community_post_crud(client, test_user):
 
 
 def test_safety_report_crud(client, test_user):
+    token = get_test_jwt_token(test_user, f"user_{test_user}", f"user{test_user}@example.com")
+    headers = get_auth_headers(token)
+    
     # create safety report
     res = client.post(
-        f"/users/{test_user}/safety-reports",
+        "/users/safety-reports",
         json={
             "report_type": "dangerous_road",
             "latitude": 37.5665,
             "longitude": 126.9780,
             "description": "도로에 큰 구멍이 있어 위험합니다"
         },
+        headers=headers
     )
     assert res.status_code == 201
     report_data = res.get_json()["data"][0]
@@ -103,16 +111,19 @@ def test_safety_report_crud(client, test_user):
     assert report_data["status"] == "pending"
 
     # get user's safety reports
-    res = client.get(f"/users/{test_user}/safety-reports")
+    res = client.get("/users/safety-reports", headers=headers)
     assert res.status_code == 200
     reports = res.get_json()["data"]
     assert len(reports) == 1
 
 
 def test_cycling_goals(client, test_user):
+    token = get_test_jwt_token(test_user, f"user_{test_user}", f"user{test_user}@example.com")
+    headers = get_auth_headers(token)
+    
     # create cycling goal
     res = client.post(
-        f"/users/{test_user}/cycling-goals",
+        "/users/cycling-goals",
         json={
             "goal_type": "distance",
             "target_value": 100.0,
@@ -120,6 +131,7 @@ def test_cycling_goals(client, test_user):
             "start_date": "2025-07-01",
             "end_date": "2025-07-31"
         },
+        headers=headers
     )
     assert res.status_code == 201
     goal_data = res.get_json()["data"][0]
@@ -127,34 +139,39 @@ def test_cycling_goals(client, test_user):
     assert float(goal_data["target_value"]) == 100.0
 
     # get cycling goals
-    res = client.get(f"/users/{test_user}/cycling-goals")
+    res = client.get("/users/cycling-goals", headers=headers)
     assert res.status_code == 200
     goals = res.get_json()["data"]
     assert len(goals) == 1
 
 
 def test_user_stats(client, test_user):
+    token = get_test_jwt_token(test_user, f"user_{test_user}", f"user{test_user}@example.com")
+    headers = get_auth_headers(token)
+    
     # create some bike logs first
     client.post(
-        f"/users/{test_user}/bike-logs",
+        "/users/bike-logs",
         json={
             "description": "test ride 1",
             "distance": 10.5,
             "duration_minutes": 45
         },
+        headers=headers
     )
     
     client.post(
-        f"/users/{test_user}/bike-logs",
+        "/users/bike-logs",
         json={
             "description": "test ride 2",
             "distance": 8.3,
             "duration_minutes": 30
         },
+        headers=headers
     )
 
     # get user stats
-    res = client.get(f"/users/{test_user}/stats")
+    res = client.get("/users/stats", headers=headers)
     assert res.status_code == 200
     stats = res.get_json()["data"][0]
     
@@ -162,3 +179,32 @@ def test_user_stats(client, test_user):
     assert float(stats["total_distance"]) == 18.8
     assert stats["total_duration"] == 75
     assert "goals_progress" in stats
+
+
+def test_community_auth_required(client, test_user):
+    # Test create post without JWT token
+    res = client.post(
+        "/community/posts",
+        json={
+            "title": "Test post",
+            "content": "Test content",
+            "post_type": "question"
+        }
+    )
+    assert res.status_code == 401
+    
+    # Test create safety report without JWT token
+    res = client.post(
+        "/users/safety-reports",
+        json={
+            "report_type": "dangerous_road",
+            "latitude": 37.5665,
+            "longitude": 126.9780,
+            "description": "Test report"
+        }
+    )
+    assert res.status_code == 401
+    
+    # Test get cycling goals without JWT token
+    res = client.get("/users/cycling-goals")
+    assert res.status_code == 401

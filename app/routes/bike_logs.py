@@ -1,14 +1,142 @@
 from flask import Blueprint, request
 
 from ..utils.responses import make_response
+from ..utils.auth import jwt_required, get_current_user_id
 
 from ..db import get_db
 
 bp = Blueprint("bike_logs", __name__)
 
 
-@bp.route("/users/<int:user_id>/bike-logs", methods=["POST"])
-def create_bike_log(user_id):
+@bp.route("/users/bike-logs", methods=["POST"])
+@jwt_required
+def create_bike_log():
+    """
+    자전거 이용 로그 생성
+    ---
+    tags:
+      - Bike Logs
+    summary: 자전거 이용 기록 생성
+    description: 자전거 이용 기록을 생성하고 보상을 지급합니다.
+    security:
+      - JWT: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - description
+          properties:
+            description:
+              type: string
+              description: 라이딩 설명
+              example: "한강 라이딩"
+            start_latitude:
+              type: number
+              format: float
+              description: 시작점 위도
+              example: 37.5665
+            start_longitude:
+              type: number
+              format: float
+              description: 시작점 경도
+              example: 126.978
+            end_latitude:
+              type: number
+              format: float
+              description: 도착점 위도
+              example: 37.5702
+            end_longitude:
+              type: number
+              format: float
+              description: 도착점 경도
+              example: 126.9861
+            distance:
+              type: number
+              format: float
+              description: 이동 거리 (km)
+              example: 5.2
+            duration_minutes:
+              type: integer
+              description: 소요 시간 (분)
+              example: 45
+            start_time:
+              type: string
+              format: date-time
+              description: 시작 시간
+              example: "2024-01-01T09:00:00Z"
+            end_time:
+              type: string
+              format: date-time
+              description: 종료 시간
+              example: "2024-01-01T09:45:00Z"
+    responses:
+      201:
+        description: 자전거 로그 생성 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 201
+            message:
+              type: string
+              example: "Created"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  user_id:
+                    type: integer
+                    example: 1
+                  description:
+                    type: string
+                    example: "한강 라이딩"
+                  start_latitude:
+                    type: number
+                    example: 37.5665
+                  start_longitude:
+                    type: number
+                    example: 126.978
+                  end_latitude:
+                    type: number
+                    example: 37.5702
+                  end_longitude:
+                    type: number
+                    example: 126.9861
+                  distance:
+                    type: number
+                    example: 5.2
+                  duration_minutes:
+                    type: integer
+                    example: 45
+                  start_time:
+                    type: string
+                    example: "2024-01-01T09:00:00Z"
+                  end_time:
+                    type: string
+                    example: "2024-01-01T09:45:00Z"
+                  usage_time:
+                    type: string
+                    example: "2024-01-01T09:00:00Z"
+                  points_earned:
+                    type: integer
+                    example: 15
+                  experience_earned:
+                    type: integer
+                    example: 8
+      400:
+        description: 잘못된 요청
+      401:
+        description: 인증 실패
+    """
+    user_id = get_current_user_id()
     data = request.get_json() or {}
     description = data.get("description")
     start_latitude = data.get("start_latitude")
@@ -80,8 +208,52 @@ def create_bike_log(user_id):
     return make_response(response_data, 201)
 
 
-@bp.route("/users/<int:user_id>/bike-logs", methods=["GET"])
-def list_bike_logs(user_id):
+@bp.route("/users/bike-logs", methods=["GET"])
+@jwt_required
+def list_bike_logs():
+    """
+    자전거 이용 로그 목록 조회
+    ---
+    tags:
+      - Bike Logs
+    summary: 사용자의 자전거 이용 기록 목록 조회
+    description: 현재 사용자의 자전거 이용 기록들을 조회합니다.
+    security:
+      - JWT: []
+    responses:
+      200:
+        description: 자전거 로그 목록 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  user_id:
+                    type: integer
+                    example: 1
+                  description:
+                    type: string
+                    example: "한강 라이딩"
+                  usage_time:
+                    type: string
+                    format: date-time
+                    example: "2024-01-01T09:00:00Z"
+      401:
+        description: 인증 실패
+    """
+    user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
@@ -94,6 +266,7 @@ def list_bike_logs(user_id):
 
 
 @bp.route("/bike-logs/<int:log_id>", methods=["PUT"])
+@jwt_required
 def update_bike_log(log_id):
     data = request.get_json() or {}
     description = data.get("description")
@@ -114,6 +287,7 @@ def update_bike_log(log_id):
 
 
 @bp.route("/bike-logs/<int:log_id>", methods=["DELETE"])
+@jwt_required
 def delete_bike_log(log_id):
     db = get_db()
     with db.cursor() as cur:
@@ -124,9 +298,11 @@ def delete_bike_log(log_id):
     return make_response(None, 204)
 
 
-@bp.route("/users/<int:user_id>/rewards", methods=["GET"])
-def get_user_rewards(user_id):
+@bp.route("/users/rewards", methods=["GET"])
+@jwt_required
+def get_user_rewards():
     """사용자 포인트 적립 내역 조회"""
+    user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:
         cur.execute("""
@@ -139,9 +315,11 @@ def get_user_rewards(user_id):
     return make_response([dict(reward) for reward in rewards])
 
 
-@bp.route("/users/<int:user_id>/cycling-goals", methods=["GET"])
-def get_cycling_goals(user_id):
+@bp.route("/users/cycling-goals", methods=["GET"])
+@jwt_required
+def get_cycling_goals():
     """사용자 사이클링 목표 조회"""
+    user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:
         cur.execute("""
@@ -154,9 +332,11 @@ def get_cycling_goals(user_id):
     return make_response([dict(goal) for goal in goals])
 
 
-@bp.route("/users/<int:user_id>/cycling-goals", methods=["POST"])
-def create_cycling_goal(user_id):
+@bp.route("/users/cycling-goals", methods=["POST"])
+@jwt_required
+def create_cycling_goal():
     """새로운 사이클링 목표 생성"""
+    user_id = get_current_user_id()
     data = request.get_json() or {}
     goal_type = data.get("goal_type")  # distance, duration, frequency
     target_value = data.get("target_value")
@@ -180,9 +360,11 @@ def create_cycling_goal(user_id):
     return make_response(dict(goal), 201)
 
 
-@bp.route("/users/<int:user_id>/achievements", methods=["GET"])
-def get_user_achievements(user_id):
+@bp.route("/users/achievements", methods=["GET"])
+@jwt_required
+def get_user_achievements():
     """사용자 업적 조회"""
+    user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:
         cur.execute("""
@@ -195,9 +377,11 @@ def get_user_achievements(user_id):
     return make_response([dict(achievement) for achievement in achievements])
 
 
-@bp.route("/users/<int:user_id>/stats", methods=["GET"])
-def get_user_stats(user_id):
+@bp.route("/users/stats", methods=["GET"])
+@jwt_required
+def get_user_stats():
     """사용자 통계 조회"""
+    user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:
         # 총 이용 통계

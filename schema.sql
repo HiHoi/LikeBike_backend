@@ -35,6 +35,7 @@ CREATE TABLE users (
     points INTEGER DEFAULT 0,
     level INTEGER DEFAULT 1,
     experience_points INTEGER DEFAULT 0,
+    is_admin BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (level) REFERENCES user_levels (level)
 );

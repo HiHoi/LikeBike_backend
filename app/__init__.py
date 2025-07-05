@@ -4,6 +4,7 @@ import time
 
 from flask import Flask, g, request
 from flask_cors import CORS
+from flasgger import Swagger
 
 from . import db
 from .routes import main as main_blueprint
@@ -142,5 +143,74 @@ def create_app(test_config=None):
     app.register_blueprint(users_bp)
     app.register_blueprint(bike_logs_bp)
     app.register_blueprint(community_bp)
+    
+    # Swagger 설정
+    swagger_config = {
+        "headers": [],
+        "specs": [
+            {
+                "endpoint": "apispec",
+                "route": "/apispec.json",
+                "rule_filter": lambda rule: True,
+                "model_filter": lambda tag: True,
+            }
+        ],
+        "static_url_path": "/flasgger_static",
+        "swagger_ui": True,
+        "specs_route": "/apidocs/",
+        "title": "LikeBike API",
+        "description": "자전거 이용 활성화를 위한 게이미피케이션 플랫폼 API",
+        "version": "1.0.0",
+        "host": "localhost:3000" if not test_config else "localhost:3000",
+        "basePath": "/",
+        "schemes": ["http", "https"],
+        "securityDefinitions": {
+            "JWT": {
+                "type": "apiKey",
+                "name": "Authorization",
+                "in": "header",
+                "description": 'JWT Authorization header using the Bearer scheme. Example: "Authorization: Bearer {token}"'
+            },
+            "AdminHeader": {
+                "type": "apiKey", 
+                "name": "X-Admin",
+                "in": "header",
+                "description": "Admin header for admin-only endpoints. Use 'true' as value."
+            }
+        },
+        "security": [{"JWT": []}]
+    }
+    
+    swagger_template = {
+        "swagger": "2.0",
+        "info": {
+            "title": "LikeBike API",
+            "description": "자전거 이용 활성화를 위한 게이미피케이션 플랫폼 API",
+            "contact": {
+                "name": "LikeBike Team",
+                "url": "https://github.com/HiHoi/LikeBike_backend"
+            },
+            "version": "1.0.0"
+        },
+        "host": "localhost:3000",
+        "basePath": "/",
+        "schemes": ["http", "https"],
+        "securityDefinitions": {
+            "JWT": {
+                "type": "apiKey",
+                "name": "Authorization", 
+                "in": "header",
+                "description": 'JWT Authorization header using the Bearer scheme. Example: "Authorization: Bearer {token}"'
+            },
+            "AdminHeader": {
+                "type": "apiKey",
+                "name": "X-Admin", 
+                "in": "header",
+                "description": "Admin header for admin-only endpoints. Use 'true' as value."
+            }
+        }
+    }
+    
+    Swagger(app, config=swagger_config, template=swagger_template)
 
     return app

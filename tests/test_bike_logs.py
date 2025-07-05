@@ -2,6 +2,7 @@ import pytest
 
 from app import create_app
 from app.db import get_db
+from tests.test_helpers import get_test_jwt_token, get_auth_headers
 
 
 @pytest.fixture
@@ -30,9 +31,12 @@ def test_user(app):
 
 
 def test_bike_log_crud(client, test_user):
+    token = get_test_jwt_token(test_user, f"user_{test_user}", f"user{test_user}@example.com")
+    headers = get_auth_headers(token)
+    
     # create log with GPS data
     res = client.post(
-        f"/users/{test_user}/bike-logs",
+        "/users/bike-logs",
         json={
             "description": "morning ride",
             "start_latitude": 37.5665,
@@ -42,6 +46,7 @@ def test_bike_log_crud(client, test_user):
             "distance": 5.2,
             "duration_minutes": 30
         },
+        headers=headers
     )
     assert res.status_code == 201
     log_data = res.get_json()["data"][0]
@@ -53,7 +58,7 @@ def test_bike_log_crud(client, test_user):
     assert float(log_data["distance"]) == 5.2
 
     # list logs
-    res = client.get(f"/users/{test_user}/bike-logs")
+    res = client.get("/users/bike-logs", headers=headers)
     assert res.status_code == 200
     logs = res.get_json()["data"]
     assert len(logs) == 1
@@ -63,15 +68,45 @@ def test_bike_log_crud(client, test_user):
     res = client.put(
         f"/bike-logs/{log_id}",
         json={"description": "evening ride"},
+        headers=headers
     )
     assert res.status_code == 200
     assert res.get_json()["data"][0]["description"] == "evening ride"
 
     # delete log
-    res = client.delete(f"/bike-logs/{log_id}")
+    res = client.delete(f"/bike-logs/{log_id}", headers=headers)
     assert res.status_code == 204
 
     # list logs after deletion
-    res = client.get(f"/users/{test_user}/bike-logs")
+    res = client.get("/users/bike-logs", headers=headers)
     assert res.status_code == 200
     assert res.get_json()["data"] == []
+
+
+def test_bike_log_auth_required(client, test_user):
+    # Test without JWT token
+    res = client.post(
+        "/users/bike-logs",
+        json={
+            "description": "test ride",
+            "distance": 5.0,
+            "duration_minutes": 30
+        }
+    )
+    assert res.status_code == 401
+    
+    # Test with invalid JWT token
+    res = client.post(
+        "/users/bike-logs",
+        json={
+            "description": "test ride",
+            "distance": 5.0,
+            "duration_minutes": 30
+        },
+        headers={"Authorization": "Bearer invalid_token"}
+    )
+    assert res.status_code == 401
+    
+    # Test list without token
+    res = client.get("/users/bike-logs")
+    assert res.status_code == 401

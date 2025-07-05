@@ -5,6 +5,7 @@ import aiohttp
 from flask import Blueprint, request
 
 from ..utils.responses import make_response
+from ..utils.auth import jwt_required, admin_required, get_current_user_id
 
 from ..db import get_db
 
@@ -25,17 +26,82 @@ async def _generate_from_clova(prompt: str, api_key: str) -> dict:
             return await resp.json()
 
 
-def _require_admin():
-    if request.headers.get("X-Admin") != "true":
-        return make_response({"error": "admin only"}, 403)
-    return None
-
-
 @bp.route("/admin/quizzes", methods=["POST"])
+@admin_required
 def create_quiz():
-    admin_check = _require_admin()
-    if admin_check:
-        return admin_check
+    """
+    퀴즈 생성 (관리자)
+    ---
+    tags:
+      - Quizzes
+    summary: 새로운 퀴즈 생성 (관리자 전용)
+    description: 관리자 권한으로 새로운 퀴즈를 생성합니다.
+    security:
+      - JWT: []
+      - AdminHeader: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - question
+            - correct_answer
+            - answers
+          properties:
+            question:
+              type: string
+              description: 퀴즈 질문
+              example: "자전거 안전을 위해 반드시 착용해야 하는 것은?"
+            correct_answer:
+              type: string
+              description: 정답
+              example: "헬멧"
+            answers:
+              type: array
+              description: 선택지 배열 (정답 포함)
+              items:
+                type: string
+              example: ["모자", "선글라스", "헬멧", "장갑"]
+    responses:
+      201:
+        description: 퀴즈 생성 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 201
+            message:
+              type: string
+              example: "Created"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  question:
+                    type: string
+                    example: "자전거 안전을 위해 반드시 착용해야 하는 것은?"
+                  correct_answer:
+                    type: string
+                    example: "헬멧"
+                  answers:
+                    type: array
+                    items:
+                      type: string
+                    example: ["모자", "선글라스", "헬멧", "장갑"]
+      400:
+        description: 잘못된 요청
+      401:
+        description: 인증 실패
+      403:
+        description: 관리자 권한 필요
+    """
     data = request.get_json() or {}
     question = data.get("question")
     correct_answer = data.get("correct_answer")
@@ -58,10 +124,8 @@ def create_quiz():
 
 
 @bp.route("/admin/quizzes/<int:quiz_id>", methods=["PUT"])
+@admin_required
 def update_quiz(quiz_id):
-    admin_check = _require_admin()
-    if admin_check:
-        return admin_check
     data = request.get_json() or {}
     question = data.get("question")
     correct_answer = data.get("correct_answer")
@@ -83,11 +147,8 @@ def update_quiz(quiz_id):
 
 
 @bp.route("/admin/quizzes/<int:quiz_id>", methods=["DELETE"])
+@admin_required
 def delete_quiz(quiz_id):
-    admin_check = _require_admin()
-    if admin_check:
-        return admin_check
-
     db = get_db()
     with db.cursor() as cur:
         cur.execute("DELETE FROM quizzes WHERE id = %s", (quiz_id,))
@@ -98,7 +159,43 @@ def delete_quiz(quiz_id):
 
 
 @bp.route("/quizzes", methods=["GET"])
+@jwt_required
 def list_quizzes():
+    """
+    퀴즈 목록 조회
+    ---
+    tags:
+      - Quizzes
+    summary: 사용 가능한 퀴즈 목록 조회
+    description: 인증된 사용자가 시도할 수 있는 퀴즈들의 목록을 조회합니다.
+    security:
+      - JWT: []
+    responses:
+      200:
+        description: 퀴즈 목록 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  question:
+                    type: string
+                    example: "자전거 안전을 위해 반드시 착용해야 하는 것은?"
+      401:
+        description: 인증 실패
+    """
     db = get_db()
     with db.cursor() as cur:
         cur.execute("SELECT id, question FROM quizzes")
@@ -108,12 +205,77 @@ def list_quizzes():
 
 
 @bp.route("/quizzes/<int:quiz_id>/attempt", methods=["POST"])
+@jwt_required
 def attempt_quiz(quiz_id):
+    """
+    퀴즈 시도
+    ---
+    tags:
+      - Quizzes
+    summary: 퀴즈 문제 시도
+    description: 특정 퀴즈에 답을 제출하고 정답 여부에 따라 보상을 받습니다.
+    security:
+      - JWT: []
+    parameters:
+      - in: path
+        name: quiz_id
+        required: true
+        type: integer
+        description: 퀴즈 ID
+        example: 1
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - answer
+          properties:
+            answer:
+              type: string
+              description: 사용자가 제출한 답
+              example: "헬멧"
+    responses:
+      200:
+        description: 퀴즈 시도 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  is_correct:
+                    type: boolean
+                    example: true
+                  reward_given:
+                    type: boolean
+                    example: true
+                  points_earned:
+                    type: integer
+                    example: 10
+                  experience_earned:
+                    type: integer
+                    example: 5
+      400:
+        description: 잘못된 요청
+      401:
+        description: 인증 실패
+      404:
+        description: 퀴즈를 찾을 수 없음
+    """
+    user_id = get_current_user_id()
     data = request.get_json() or {}
-    user_id = data.get("user_id")
     answer = data.get("answer")
-    if not user_id or not answer:
-        return make_response({"error": "user_id and answer required"}, 400)
+    if not answer:
+        return make_response({"error": "answer required"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
@@ -175,10 +337,8 @@ def attempt_quiz(quiz_id):
 
 
 @bp.route("/admin/quizzes/generate", methods=["POST"])
+@admin_required
 def generate_quiz():
-    admin_check = _require_admin()
-    if admin_check:
-        return admin_check
     data = request.get_json() or {}
     prompt = data.get("prompt")
     if not prompt:

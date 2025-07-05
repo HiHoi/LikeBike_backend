@@ -37,7 +37,33 @@ Run the development server:
 python run.py
 ```
 
-Visit `http://localhost:5000/test` and you should see `hello world`.
+Visit `http://localhost:3000/test` and you should see `hello world`.
+
+## API Documentation
+
+This project includes interactive API documentation powered by Swagger UI:
+
+- **Swagger UI**: http://localhost:3000/apidocs/
+- **API Spec JSON**: http://localhost:3000/apispec.json
+
+The Swagger documentation provides:
+
+- Interactive API testing
+- Authentication setup (JWT + Admin headers)
+- Request/response examples
+- Complete API endpoint coverage
+
+For detailed usage instructions, see [SWAGGER_GUIDE.md](./SWAGGER_GUIDE.md).
+
+### Authentication
+
+Most APIs require JWT authentication:
+
+1. Register/login via `POST /users` with Kakao token
+2. Use the returned `access_token` in Swagger UI's "Authorize" button
+3. Format: `Bearer {your_jwt_token}`
+
+Admin APIs additionally require `X-Admin: true` header.
 
 ### Generating quizzes with Clova X
 

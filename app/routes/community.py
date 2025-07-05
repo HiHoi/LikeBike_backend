@@ -1,14 +1,97 @@
 from flask import Blueprint, request
 
 from ..utils.responses import make_response
+from ..utils.auth import jwt_required, get_current_user_id
 from ..db import get_db
 
 bp = Blueprint("community", __name__)
 
 
 @bp.route("/community/posts", methods=["GET"])
+@jwt_required
 def list_posts():
-    """커뮤니티 게시글 목록 조회"""
+    """
+    커뮤니티 게시글 목록 조회
+    ---
+    tags:
+      - Community
+    summary: 커뮤니티 게시글 목록 조회
+    description: 커뮤니티에 등록된 게시글들의 목록을 조회합니다.
+    security:
+      - JWT: []
+    parameters:
+      - in: query
+        name: type
+        type: string
+        description: 게시글 타입 필터
+        enum: [general, question, tip, review]
+        example: general
+      - in: query
+        name: page
+        type: integer
+        description: 페이지 번호
+        default: 1
+        example: 1
+      - in: query
+        name: limit
+        type: integer
+        description: 페이지당 개수
+        default: 20
+        example: 20
+    responses:
+      200:
+        description: 게시글 목록 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  user_id:
+                    type: integer
+                    example: 1
+                  title:
+                    type: string
+                    example: "자전거 추천 경로"
+                  content:
+                    type: string
+                    example: "한강공원 라이딩 코스 추천합니다!"
+                  post_type:
+                    type: string
+                    example: "general"
+                  likes_count:
+                    type: integer
+                    example: 5
+                  comments_count:
+                    type: integer
+                    example: 3
+                  status:
+                    type: string
+                    example: "active"
+                  created_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-01T00:00:00Z"
+                  username:
+                    type: string
+                    example: "작성자명"
+                  level:
+                    type: integer
+                    example: 2
+      401:
+        description: 인증 실패
+    """
     post_type = request.args.get("type")
     page = int(request.args.get("page", 1))
     limit = int(request.args.get("limit", 20))
@@ -37,16 +120,105 @@ def list_posts():
 
 
 @bp.route("/community/posts", methods=["POST"])
+@jwt_required
 def create_post():
-    """새 게시글 작성"""
+    """
+    커뮤니티 게시글 작성
+    ---
+    tags:
+      - Community
+    summary: 새로운 커뮤니티 게시글 작성
+    description: 커뮤니티에 새로운 게시글을 작성하고 보상을 지급합니다.
+    security:
+      - JWT: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - title
+            - content
+          properties:
+            title:
+              type: string
+              description: 게시글 제목
+              example: "자전거 추천 경로"
+            content:
+              type: string
+              description: 게시글 내용
+              example: "한강공원 라이딩 코스 추천합니다!"
+            post_type:
+              type: string
+              description: 게시글 타입
+              enum: [general, question, tip, review]
+              default: general
+              example: "general"
+    responses:
+      201:
+        description: 게시글 작성 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 201
+            message:
+              type: string
+              example: "Created"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  user_id:
+                    type: integer
+                    example: 1
+                  title:
+                    type: string
+                    example: "자전거 추천 경로"
+                  content:
+                    type: string
+                    example: "한강공원 라이딩 코스 추천합니다!"
+                  post_type:
+                    type: string
+                    example: "general"
+                  likes_count:
+                    type: integer
+                    example: 0
+                  comments_count:
+                    type: integer
+                    example: 0
+                  status:
+                    type: string
+                    example: "active"
+                  created_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-01T00:00:00Z"
+                  points_earned:
+                    type: integer
+                    example: 2
+                  experience_earned:
+                    type: integer
+                    example: 1
+      400:
+        description: 잘못된 요청
+      401:
+        description: 인증 실패
+    """
+    user_id = get_current_user_id()
     data = request.get_json() or {}
-    user_id = data.get("user_id")
     title = data.get("title")
     content = data.get("content")
     post_type = data.get("post_type", "general")
     
-    if not all([user_id, title, content]):
-        return make_response({"error": "user_id, title, content required"}, 400)
+    if not all([title, content]):
+        return make_response({"error": "title, content required"}, 400)
     
     db = get_db()
     with db.cursor() as cur:
@@ -115,15 +287,16 @@ def get_post(post_id):
 
 
 @bp.route("/community/posts/<int:post_id>/comments", methods=["POST"])
+@jwt_required
 def create_comment(post_id):
     """댓글 작성"""
+    user_id = get_current_user_id()
     data = request.get_json() or {}
-    user_id = data.get("user_id")
     content = data.get("content")
     parent_comment_id = data.get("parent_comment_id")
     
-    if not all([user_id, content]):
-        return make_response({"error": "user_id, content required"}, 400)
+    if not content:
+        return make_response({"error": "content required"}, 400)
     
     db = get_db()
     with db.cursor() as cur:
@@ -160,13 +333,10 @@ def create_comment(post_id):
 
 
 @bp.route("/community/posts/<int:post_id>/like", methods=["POST"])
+@jwt_required
 def toggle_like(post_id):
     """좋아요 토글"""
-    data = request.get_json() or {}
-    user_id = data.get("user_id")
-    
-    if not user_id:
-        return make_response({"error": "user_id required"}, 400)
+    user_id = get_current_user_id()
     
     db = get_db()
     with db.cursor() as cur:
@@ -218,9 +388,11 @@ def toggle_like(post_id):
     })
 
 
-@bp.route("/users/<int:user_id>/safety-reports", methods=["GET"])
-def get_safety_reports(user_id):
+@bp.route("/users/safety-reports", methods=["GET"])
+@jwt_required
+def get_safety_reports():
     """안전 신고 내역 조회"""
+    user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:
         cur.execute("""
@@ -233,9 +405,11 @@ def get_safety_reports(user_id):
     return make_response([dict(report) for report in reports])
 
 
-@bp.route("/users/<int:user_id>/safety-reports", methods=["POST"])
-def create_safety_report(user_id):
+@bp.route("/users/safety-reports", methods=["POST"])
+@jwt_required
+def create_safety_report():
     """안전 신고 생성"""
+    user_id = get_current_user_id()
     data = request.get_json() or {}
     report_type = data.get("report_type")
     latitude = data.get("latitude")
