@@ -84,7 +84,7 @@ def create_app(test_config=None):
 
     db.init_app(app)
     
-    # 스키마 초기화 개선
+    # 스키마 초기화 개선 - 더 안전하게
     def ensure_schema():
         try:
             from .db import get_db, init_db
@@ -118,15 +118,19 @@ def create_app(test_config=None):
             import traceback
             traceback.print_exc()
     
-    # 애플리케이션 시작 시 스키마 확인
-    if not test_config:
-        with app.app_context():
-            ensure_schema()
+    # 애플리케이션 시작 시 스키마 확인 (제거)
+    # if not test_config:
+    #     with app.app_context():
+    #         ensure_schema()
 
-    # 각 요청 전에 스키마 확인 (첫 번째 요청에서만)
-    @app.before_first_request
-    def check_schema_on_first_request():
-        with app.app_context():
+    # Flask 2.2+ 호환 방식으로 첫 요청시 스키마 확인
+    schema_initialized = False
+    
+    @app.before_request
+    def check_schema_once():
+        nonlocal schema_initialized
+        if not schema_initialized and not test_config:
+            schema_initialized = True
             ensure_schema()
 
     app.register_blueprint(main_blueprint)
