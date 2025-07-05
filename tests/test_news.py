@@ -25,8 +25,8 @@ def test_admin_user(app):
         db = get_db()
         with db.cursor() as cur:
             cur.execute(
-                "INSERT INTO users (kakao_id, username, email, is_admin) VALUES (%s, %s, %s, %s) RETURNING id",
-                ("admin_kakao_999", "admin", "admin@example.com", True),
+                "INSERT INTO users (kakao_id, username, email, profile_image_url, is_admin) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                ("admin_kakao_999", "admin", "admin@example.com", "https://k.kakaocdn.net/dn/admin.jpg", True),
             )
             user_id = cur.fetchone()["id"]
         return user_id
@@ -39,8 +39,8 @@ def test_user(app):
         db = get_db()
         with db.cursor() as cur:
             cur.execute(
-                "INSERT INTO users (kakao_id, username, email) VALUES (%s, %s, %s) RETURNING id",
-                ("test_kakao_123", "testuser", "test@example.com"),
+                "INSERT INTO users (kakao_id, username, email, profile_image_url) VALUES (%s, %s, %s, %s) RETURNING id",
+                ("test_kakao_123", "testuser", "test@example.com", "https://k.kakaocdn.net/dn/user.jpg"),
             )
             user_id = cur.fetchone()["id"]
         return user_id

@@ -24,8 +24,8 @@ def test_user(app):
         db = get_db()
         with db.cursor() as cur:
             cur.execute(
-                "INSERT INTO users (kakao_id, username, email) VALUES (%s, %s, %s) RETURNING id",
-                ("test_community_user", "communityuser", "community@example.com"),
+                "INSERT INTO users (kakao_id, username, email, profile_image_url) VALUES (%s, %s, %s, %s) RETURNING id",
+                ("test_community_user", "communityuser", "community@example.com", "https://k.kakaocdn.net/dn/community.jpg"),
             )
             return cur.fetchone()["id"]
 

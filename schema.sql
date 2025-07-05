@@ -32,6 +32,7 @@ CREATE TABLE users (
     kakao_id VARCHAR(255) UNIQUE NOT NULL,
     username VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
+    profile_image_url TEXT,
     points INTEGER DEFAULT 0,
     level INTEGER DEFAULT 1,
     experience_points INTEGER DEFAULT 0,

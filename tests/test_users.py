@@ -23,7 +23,10 @@ def test_register_user(client, monkeypatch, app):
             "id": 999,
             "kakao_account": {
                 "email": "test@kakao.com",
-                "profile": {"nickname": "kakao_user"},
+                "profile": {
+                    "nickname": "kakao_user",
+                    "profile_image_url": "https://k.kakaocdn.net/dn/test_profile.jpg"
+                },
             },
         }
 
@@ -35,6 +38,7 @@ def test_register_user(client, monkeypatch, app):
     assert "access_token" in data
     assert data["username"] == "kakao_user"
     assert data["email"] == "test@kakao.com"
+    assert data["profile_image_url"] == "https://k.kakaocdn.net/dn/test_profile.jpg"
 
 
 def test_update_user_profile(client, monkeypatch, app):
@@ -45,7 +49,10 @@ def test_update_user_profile(client, monkeypatch, app):
             "id": 999,
             "kakao_account": {
                 "email": "test@kakao.com",
-                "profile": {"nickname": "kakao_user"},
+                "profile": {
+                    "nickname": "kakao_user",
+                    "profile_image_url": "https://k.kakaocdn.net/dn/test_profile.jpg"
+                },
             },
         }
 
@@ -57,11 +64,16 @@ def test_update_user_profile(client, monkeypatch, app):
     user_id = user_data["id"]
     jwt_token = user_data["access_token"]
     
-    # JWT 토큰으로 프로필 수정
+    # JWT 토큰으로 프로필 수정 (프로필 이미지 포함)
     headers = {"Authorization": f"Bearer {jwt_token}", "Content-Type": "application/json"}
-    res = client.put("/users/profile", json={"username": "updated"}, headers=headers)
+    res = client.put("/users/profile", json={
+        "username": "updated",
+        "profile_image_url": "https://k.kakaocdn.net/dn/updated_profile.jpg"
+    }, headers=headers)
     assert res.status_code == 200
-    assert res.get_json()["data"][0]["username"] == "updated"
+    data = res.get_json()["data"][0]
+    assert data["username"] == "updated"
+    assert data["profile_image_url"] == "https://k.kakaocdn.net/dn/updated_profile.jpg"
 
 
 def test_delete_user_profile(client, monkeypatch, app):
@@ -72,7 +84,10 @@ def test_delete_user_profile(client, monkeypatch, app):
             "id": 999,
             "kakao_account": {
                 "email": "test@kakao.com",
-                "profile": {"nickname": "kakao_user"},
+                "profile": {
+                    "nickname": "kakao_user",
+                    "profile_image_url": "https://k.kakaocdn.net/dn/test_profile.jpg"
+                },
             },
         }
 
@@ -96,7 +111,10 @@ def test_get_user_profile(client, monkeypatch, app):
             "id": 999,
             "kakao_account": {
                 "email": "test@kakao.com",
-                "profile": {"nickname": "kakao_user"},
+                "profile": {
+                    "nickname": "kakao_user",
+                    "profile_image_url": "https://k.kakaocdn.net/dn/test_profile.jpg"
+                },
             },
         }
 
@@ -113,6 +131,7 @@ def test_get_user_profile(client, monkeypatch, app):
     data = res.get_json()["data"][0]
     assert data["username"] == "kakao_user"
     assert data["email"] == "test@kakao.com"
+    assert "profile_image_url" in data
 
 
 def test_unauthorized_access(client):
@@ -148,7 +167,10 @@ def test_logout(client, monkeypatch):
             "id": 999,
             "kakao_account": {
                 "email": "test@kakao.com",
-                "profile": {"nickname": "kakao_user"},
+                "profile": {
+                    "nickname": "kakao_user",
+                    "profile_image_url": "https://k.kakaocdn.net/dn/test_profile.jpg"
+                },
             },
         }
 
@@ -174,7 +196,10 @@ def test_token_refresh(client, monkeypatch):
             "id": 999,
             "kakao_account": {
                 "email": "test@kakao.com",
-                "profile": {"nickname": "kakao_user"},
+                "profile": {
+                    "nickname": "kakao_user",
+                    "profile_image_url": "https://k.kakaocdn.net/dn/test_profile.jpg"
+                },
             },
         }
 
