@@ -23,20 +23,34 @@ def test_user(app):
         db = get_db()
         with db.cursor() as cur:
             cur.execute(
-                "INSERT INTO users (username, email) VALUES (%s, %s) RETURNING id",
-                ("bikeuser", "bike@example.com"),
+                "INSERT INTO users (kakao_id, username, email) VALUES (%s, %s, %s) RETURNING id",
+                ("test_kakao_id", "bikeuser", "bike@example.com"),
             )
             return cur.fetchone()["id"]
 
 
 def test_bike_log_crud(client, test_user):
-    # create log
+    # create log with GPS data
     res = client.post(
         f"/users/{test_user}/bike-logs",
-        json={"description": "morning ride"},
+        json={
+            "description": "morning ride",
+            "start_latitude": 37.5665,
+            "start_longitude": 126.9780,
+            "end_latitude": 37.5675,
+            "end_longitude": 126.9790,
+            "distance": 5.2,
+            "duration_minutes": 30
+        },
     )
     assert res.status_code == 201
-    log_id = res.get_json()["data"][0]["id"]
+    log_data = res.get_json()["data"][0]
+    log_id = log_data["id"]
+    
+    # 보상이 포함되어 있는지 확인
+    assert "points_earned" in log_data
+    assert "experience_earned" in log_data
+    assert float(log_data["distance"]) == 5.2
 
     # list logs
     res = client.get(f"/users/{test_user}/bike-logs")

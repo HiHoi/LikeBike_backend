@@ -1,0 +1,164 @@
+import pytest
+
+from app import create_app
+from app.db import get_db
+
+
+@pytest.fixture
+def app():
+    app = create_app(
+        {"TESTING": True, "DATABASE_URL": "postgresql://localhost/likebike_test"}
+    )
+    return app
+
+
+@pytest.fixture
+def client(app):
+    return app.test_client()
+
+
+@pytest.fixture
+def test_user(app):
+    with app.app_context():
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute(
+                "INSERT INTO users (kakao_id, username, email) VALUES (%s, %s, %s) RETURNING id",
+                ("test_community_user", "communityuser", "community@example.com"),
+            )
+            return cur.fetchone()["id"]
+
+
+def test_community_post_crud(client, test_user):
+    # create post
+    res = client.post(
+        "/community/posts",
+        json={
+            "user_id": test_user,
+            "title": "자전거 추천 경로",
+            "content": "한강공원 라이딩 코스 추천합니다!",
+            "post_type": "route_share"
+        },
+    )
+    assert res.status_code == 201
+    post_data = res.get_json()["data"][0]
+    post_id = post_data["id"]
+    
+    # 보상이 포함되어 있는지 확인
+    assert "points_earned" in post_data
+    assert "experience_earned" in post_data
+
+    # get post detail
+    res = client.get(f"/community/posts/{post_id}")
+    assert res.status_code == 200
+    post_detail = res.get_json()["data"][0]
+    assert post_detail["title"] == "자전거 추천 경로"
+    assert "comments" in post_detail
+
+    # add comment
+    res = client.post(
+        f"/community/posts/{post_id}/comments",
+        json={
+            "user_id": test_user,
+            "content": "좋은 정보 감사합니다!"
+        },
+    )
+    assert res.status_code == 201
+
+    # toggle like
+    res = client.post(
+        f"/community/posts/{post_id}/like",
+        json={"user_id": test_user},
+    )
+    assert res.status_code == 200
+    like_data = res.get_json()["data"][0]
+    assert like_data["liked"] == True
+    assert like_data["likes_count"] == 1
+
+    # toggle like again (unlike)
+    res = client.post(
+        f"/community/posts/{post_id}/like",
+        json={"user_id": test_user},
+    )
+    assert res.status_code == 200
+    unlike_data = res.get_json()["data"][0]
+    assert unlike_data["liked"] == False
+    assert unlike_data["likes_count"] == 0
+
+
+def test_safety_report_crud(client, test_user):
+    # create safety report
+    res = client.post(
+        f"/users/{test_user}/safety-reports",
+        json={
+            "report_type": "dangerous_road",
+            "latitude": 37.5665,
+            "longitude": 126.9780,
+            "description": "도로에 큰 구멍이 있어 위험합니다"
+        },
+    )
+    assert res.status_code == 201
+    report_data = res.get_json()["data"][0]
+    assert report_data["report_type"] == "dangerous_road"
+    assert report_data["status"] == "pending"
+
+    # get user's safety reports
+    res = client.get(f"/users/{test_user}/safety-reports")
+    assert res.status_code == 200
+    reports = res.get_json()["data"]
+    assert len(reports) == 1
+
+
+def test_cycling_goals(client, test_user):
+    # create cycling goal
+    res = client.post(
+        f"/users/{test_user}/cycling-goals",
+        json={
+            "goal_type": "distance",
+            "target_value": 100.0,
+            "period_type": "monthly",
+            "start_date": "2025-07-01",
+            "end_date": "2025-07-31"
+        },
+    )
+    assert res.status_code == 201
+    goal_data = res.get_json()["data"][0]
+    assert goal_data["goal_type"] == "distance"
+    assert float(goal_data["target_value"]) == 100.0
+
+    # get cycling goals
+    res = client.get(f"/users/{test_user}/cycling-goals")
+    assert res.status_code == 200
+    goals = res.get_json()["data"]
+    assert len(goals) == 1
+
+
+def test_user_stats(client, test_user):
+    # create some bike logs first
+    client.post(
+        f"/users/{test_user}/bike-logs",
+        json={
+            "description": "test ride 1",
+            "distance": 10.5,
+            "duration_minutes": 45
+        },
+    )
+    
+    client.post(
+        f"/users/{test_user}/bike-logs",
+        json={
+            "description": "test ride 2",
+            "distance": 8.3,
+            "duration_minutes": 30
+        },
+    )
+
+    # get user stats
+    res = client.get(f"/users/{test_user}/stats")
+    assert res.status_code == 200
+    stats = res.get_json()["data"][0]
+    
+    assert stats["total_rides"] == 2
+    assert float(stats["total_distance"]) == 18.8
+    assert stats["total_duration"] == 75
+    assert "goals_progress" in stats

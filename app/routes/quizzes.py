@@ -39,19 +39,20 @@ def create_quiz():
     data = request.get_json() or {}
     question = data.get("question")
     correct_answer = data.get("correct_answer")
+    answers = data.get("answers", [])  # 선택지 배열
     if not question or not correct_answer:
         return make_response({"error": "question and correct_answer required"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO quizzes (question, correct_answer) VALUES (%s, %s) RETURNING id",
-            (question, correct_answer),
+            "INSERT INTO quizzes (question, correct_answer, answers) VALUES (%s, %s, %s) RETURNING id",
+            (question, correct_answer, answers),
         )
         quiz_id = cur.fetchone()["id"]
 
     return make_response(
-        {"id": quiz_id, "question": question, "correct_answer": correct_answer},
+        {"id": quiz_id, "question": question, "correct_answer": correct_answer, "answers": answers},
         201,
     )
 
@@ -64,14 +65,15 @@ def update_quiz(quiz_id):
     data = request.get_json() or {}
     question = data.get("question")
     correct_answer = data.get("correct_answer")
+    answers = data.get("answers", [])
     if not question or not correct_answer:
         return make_response({"error": "question and correct_answer required"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "UPDATE quizzes SET question = %s, correct_answer = %s WHERE id = %s RETURNING id, question, correct_answer",
-            (question, correct_answer, quiz_id),
+            "UPDATE quizzes SET question = %s, correct_answer = %s, answers = %s WHERE id = %s RETURNING id, question, correct_answer, answers",
+            (question, correct_answer, answers, quiz_id),
         )
         result = cur.fetchone()
         if not result:
@@ -121,6 +123,13 @@ def attempt_quiz(quiz_id):
         if not quiz:
             return make_response({"error": "quiz not found"}, 404)
 
+        # 이미 정답을 맞춘 퀴즈인지 확인
+        cur.execute("""
+            SELECT id FROM user_quiz_attempts 
+            WHERE user_id = %s AND quiz_id = %s AND is_correct = true
+        """, (user_id, quiz_id))
+        already_correct = cur.fetchone()
+
         is_correct = answer == quiz["correct_answer"]
 
         # 시도 기록 저장
@@ -129,7 +138,40 @@ def attempt_quiz(quiz_id):
             (user_id, quiz_id, is_correct),
         )
 
-    return make_response({"is_correct": is_correct})
+        # 정답이고 처음 맞춘 경우 보상 지급
+        reward_given = False
+        if is_correct and not already_correct:
+            points = 10  # 퀴즈 정답 시 10포인트
+            exp = 5      # 퀴즈 정답 시 5경험치
+            
+            # 포인트 업데이트
+            cur.execute("""
+                UPDATE users 
+                SET points = points + %s, experience_points = experience_points + %s 
+                WHERE id = %s
+            """, (points, exp, user_id))
+            
+            # 보상 기록
+            cur.execute("""
+                INSERT INTO rewards 
+                (user_id, source_type, source_id, points, experience_points, reward_reason)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (user_id, "quiz", quiz_id, points, exp, "퀴즈 정답"))
+            
+            reward_given = True
+
+    response_data = {
+        "is_correct": is_correct,
+        "reward_given": reward_given
+    }
+    
+    if reward_given:
+        response_data.update({
+            "points_earned": 10,
+            "experience_earned": 5
+        })
+
+    return make_response(response_data)
 
 
 @bp.route("/admin/quizzes/generate", methods=["POST"])
