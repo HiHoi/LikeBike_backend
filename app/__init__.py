@@ -83,14 +83,13 @@ def create_app(test_config=None):
 
     db.init_app(app)
 
-    # 스키마 초기화 개선 - 더 안전하게
+        # 스키마 초기화 개선 - RealDictCursor 호환
     def ensure_schema():
         try:
             from .db import get_db, init_db
             print("Checking database schema...")
             db_conn = get_db()
             
-            # 일반 커서 사용 (스키마 확인용)
             with db_conn.cursor() as cur:
                 # 여러 테이블 확인
                 tables_to_check = ['users', 'quizzes', 'news', 'bike_logs', 'community_posts']
@@ -103,7 +102,13 @@ def create_app(test_config=None):
                             WHERE table_name = %s
                         )
                     """, (table,))
-                    table_exists = cur.fetchone()[0]
+                    result = cur.fetchone()
+                    
+                    # RealDictCursor와 일반 커서 모두 호환
+                    if isinstance(result, dict):
+                        table_exists = result.get('exists', False)
+                    else:
+                        table_exists = result[0] if result else False
                     
                     if not table_exists:
                         missing_tables.append(table)
@@ -120,7 +125,7 @@ def create_app(test_config=None):
             # 스키마 초기화 실패 시에도 애플리케이션은 계속 실행
             import traceback
             traceback.print_exc()
-    
+            
     # Flask 2.2+ 호환 방식으로 첫 요청시 스키마 확인
     schema_initialized = False
     
