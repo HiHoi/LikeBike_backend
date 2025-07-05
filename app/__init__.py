@@ -12,7 +12,6 @@ from .routes.community import bp as community_bp
 from .routes.news import bp as news_bp
 from .routes.quizzes import bp as quizzes_bp
 from .routes.users import bp as users_bp
-
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
 
@@ -83,13 +82,15 @@ def create_app(test_config=None):
         pass
 
     db.init_app(app)
-    
+
     # 스키마 초기화 개선 - 더 안전하게
     def ensure_schema():
         try:
             from .db import get_db, init_db
             print("Checking database schema...")
             db_conn = get_db()
+            
+            # 일반 커서 사용 (스키마 확인용)
             with db_conn.cursor() as cur:
                 # 여러 테이블 확인
                 tables_to_check = ['users', 'quizzes', 'news', 'bike_logs', 'community_posts']
@@ -102,7 +103,9 @@ def create_app(test_config=None):
                             WHERE table_name = %s
                         )
                     """, (table,))
-                    if not cur.fetchone()[0]:
+                    table_exists = cur.fetchone()[0]
+                    
+                    if not table_exists:
                         missing_tables.append(table)
                 
                 if missing_tables:
@@ -118,11 +121,6 @@ def create_app(test_config=None):
             import traceback
             traceback.print_exc()
     
-    # 애플리케이션 시작 시 스키마 확인 (제거)
-    # if not test_config:
-    #     with app.app_context():
-    #         ensure_schema()
-
     # Flask 2.2+ 호환 방식으로 첫 요청시 스키마 확인
     schema_initialized = False
     
