@@ -301,7 +301,60 @@ def delete_bike_log(log_id):
 @bp.route("/users/rewards", methods=["GET"])
 @jwt_required
 def get_user_rewards():
-    """사용자 포인트 적립 내역 조회"""
+    """
+    사용자 포인트 적립 내역 조회
+    ---
+    tags:
+      - Bike Logs
+    summary: 사용자의 포인트 적립 내역 조회
+    description: 현재 로그인한 사용자의 포인트 적립 내역을 조회합니다.
+    security:
+      - JWT: []
+    responses:
+      200:
+        description: 포인트 적립 내역 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  user_id:
+                    type: integer
+                    example: 1
+                  source:
+                    type: string
+                    example: "bike_usage"
+                  source_id:
+                    type: integer
+                    example: 123
+                  points:
+                    type: integer
+                    example: 10
+                  exp:
+                    type: integer
+                    example: 15
+                  description:
+                    type: string
+                    example: "자전거 이용 (3.5km)"
+                  created_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T10:30:00Z"
+      401:
+        description: 인증 실패
+    """
     user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:
@@ -318,7 +371,71 @@ def get_user_rewards():
 @bp.route("/users/cycling-goals", methods=["GET"])
 @jwt_required
 def get_cycling_goals():
-    """사용자 사이클링 목표 조회"""
+    """
+    사용자 사이클링 목표 조회
+    ---
+    tags:
+      - Bike Logs
+    summary: 사용자의 사이클링 목표 조회
+    description: 현재 로그인한 사용자의 사이클링 목표 목록을 조회합니다.
+    security:
+      - JWT: []
+    responses:
+      200:
+        description: 사이클링 목표 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  user_id:
+                    type: integer
+                    example: 1
+                  goal_type:
+                    type: string
+                    enum: ["distance", "duration", "frequency"]
+                    example: "distance"
+                  target_value:
+                    type: number
+                    example: 50.0
+                  period_type:
+                    type: string
+                    enum: ["daily", "weekly", "monthly"]
+                    example: "weekly"
+                  start_date:
+                    type: string
+                    format: date
+                    example: "2024-01-01"
+                  end_date:
+                    type: string
+                    format: date
+                    example: "2024-01-07"
+                  current_value:
+                    type: number
+                    example: 25.5
+                  status:
+                    type: string
+                    enum: ["active", "completed", "failed"]
+                    example: "active"
+                  created_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-01T00:00:00Z"
+      401:
+        description: 인증 실패
+    """
     user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:
@@ -335,7 +452,111 @@ def get_cycling_goals():
 @bp.route("/users/cycling-goals", methods=["POST"])
 @jwt_required
 def create_cycling_goal():
-    """새로운 사이클링 목표 생성"""
+    """
+    새로운 사이클링 목표 생성
+    ---
+    tags:
+      - Bike Logs
+    summary: 새로운 사이클링 목표 생성
+    description: 현재 로그인한 사용자의 새로운 사이클링 목표를 생성합니다.
+    security:
+      - JWT: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - goal_type
+            - target_value
+            - period_type
+            - start_date
+            - end_date
+          properties:
+            goal_type:
+              type: string
+              enum: ["distance", "duration", "frequency"]
+              description: 목표 유형
+              example: "distance"
+            target_value:
+              type: number
+              description: 목표 수치
+              example: 50.0
+            period_type:
+              type: string
+              enum: ["daily", "weekly", "monthly"]
+              description: 기간 유형
+              example: "weekly"
+            start_date:
+              type: string
+              format: date
+              description: 시작일
+              example: "2024-01-01"
+            end_date:
+              type: string
+              format: date
+              description: 종료일
+              example: "2024-01-07"
+    responses:
+      201:
+        description: 사이클링 목표 생성 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 201
+            message:
+              type: string
+              example: "Created"
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 1
+                user_id:
+                  type: integer
+                  example: 1
+                goal_type:
+                  type: string
+                  example: "distance"
+                target_value:
+                  type: number
+                  example: 50.0
+                period_type:
+                  type: string
+                  example: "weekly"
+                start_date:
+                  type: string
+                  format: date
+                  example: "2024-01-01"
+                end_date:
+                  type: string
+                  format: date
+                  example: "2024-01-07"
+                current_value:
+                  type: number
+                  example: 0
+                status:
+                  type: string
+                  example: "active"
+                created_at:
+                  type: string
+                  format: date-time
+                  example: "2024-01-01T00:00:00Z"
+      400:
+        description: 잘못된 요청
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              example: "missing required fields"
+      401:
+        description: 인증 실패
+    """
     user_id = get_current_user_id()
     data = request.get_json() or {}
     goal_type = data.get("goal_type")  # distance, duration, frequency
@@ -363,7 +584,63 @@ def create_cycling_goal():
 @bp.route("/users/achievements", methods=["GET"])
 @jwt_required
 def get_user_achievements():
-    """사용자 업적 조회"""
+    """
+    사용자 업적 조회
+    ---
+    tags:
+      - Bike Logs
+    summary: 사용자의 업적 조회
+    description: 현재 로그인한 사용자의 달성한 업적 목록을 조회합니다.
+    security:
+      - JWT: []
+    responses:
+      200:
+        description: 업적 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  user_id:
+                    type: integer
+                    example: 1
+                  achievement_type:
+                    type: string
+                    example: "distance_milestone"
+                  title:
+                    type: string
+                    example: "첫 번째 10km 달성"
+                  description:
+                    type: string
+                    example: "누적 자전거 이용 거리 10km를 달성했습니다"
+                  badge_url:
+                    type: string
+                    example: "/static/badges/10km.png"
+                  points_reward:
+                    type: integer
+                    example: 100
+                  exp_reward:
+                    type: integer
+                    example: 150
+                  achieved_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T10:30:00Z"
+      401:
+        description: 인증 실패
+    """
     user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:
@@ -380,7 +657,77 @@ def get_user_achievements():
 @bp.route("/users/stats", methods=["GET"])
 @jwt_required
 def get_user_stats():
-    """사용자 통계 조회"""
+    """
+    사용자 통계 조회
+    ---
+    tags:
+      - Bike Logs
+    summary: 사용자의 자전거 이용 통계 조회
+    description: 현재 로그인한 사용자의 총 이용 통계, 주간 통계, 목표 달성률 등을 조회합니다.
+    security:
+      - JWT: []
+    responses:
+      200:
+        description: 통계 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: object
+              properties:
+                total_stats:
+                  type: object
+                  properties:
+                    total_rides:
+                      type: integer
+                      example: 25
+                    total_distance:
+                      type: number
+                      example: 127.5
+                    total_duration:
+                      type: integer
+                      example: 450
+                    avg_distance:
+                      type: number
+                      example: 5.1
+                weekly_stats:
+                  type: object
+                  properties:
+                    weekly_rides:
+                      type: integer
+                      example: 3
+                    weekly_distance:
+                      type: number
+                      example: 15.2
+                    weekly_duration:
+                      type: integer
+                      example: 65
+                goals_progress:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      goal_type:
+                        type: string
+                        example: "distance"
+                      target_value:
+                        type: number
+                        example: 50.0
+                      current_value:
+                        type: number
+                        example: 35.2
+                      progress_percent:
+                        type: number
+                        example: 70.4
+      401:
+        description: 인증 실패
+    """
     user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:

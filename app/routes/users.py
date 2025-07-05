@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import asyncio
 from typing import Any, Dict
 
@@ -72,6 +73,9 @@ def register_user():
                   email:
                     type: string
                     example: "user@kakao.com"
+                  profile_image_url:
+                    type: string
+                    example: "https://k.kakaocdn.net/dn/profile.jpg"
                   access_token:
                     type: string
                     example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
@@ -110,6 +114,7 @@ def register_user():
     profile = kakao_account.get("profile", {})
     username = profile.get("nickname") or "user"
     email = kakao_account.get("email") or f"{kakao_id}@kakao"
+    profile_image_url = profile.get("profile_image_url") or profile.get("thumbnail_image_url")
 
     db = get_db()
     with db.cursor() as cur:
@@ -120,10 +125,15 @@ def register_user():
         existing = cur.fetchone()
         if existing:
             user_id = existing["id"]
+            # 기존 사용자의 프로필 정보 업데이트 (프로필 이미지 포함)
+            cur.execute(
+                "UPDATE users SET username = %s, email = %s, profile_image_url = %s WHERE id = %s",
+                (username, email, profile_image_url, user_id)
+            )
         else:
             cur.execute(
-                "INSERT INTO users (kakao_id, username, email) VALUES (%s, %s, %s) RETURNING id",
-                (kakao_id, username, email),
+                "INSERT INTO users (kakao_id, username, email, profile_image_url) VALUES (%s, %s, %s, %s) RETURNING id",
+                (kakao_id, username, email, profile_image_url),
             )
             user_id = cur.fetchone()["id"]
             
@@ -136,7 +146,13 @@ def register_user():
         # JWT 토큰 생성
         jwt_token = generate_jwt_token(user_id, username, email)
         
-    return make_response({"id": user_id, "username": username, "email": email, "access_token": jwt_token}, 201)
+    return make_response({
+        "id": user_id, 
+        "username": username, 
+        "email": email, 
+        "profile_image_url": profile_image_url,
+        "access_token": jwt_token
+    }, 201)
 
 
 @bp.route("/users/profile", methods=["PUT"])
@@ -166,6 +182,10 @@ def update_user():
               type: string
               description: 새로운 이메일
               example: "newemail@example.com"
+            profile_image_url:
+              type: string
+              description: 새로운 프로필 이미지 URL
+              example: "https://k.kakaocdn.net/dn/newprofile.jpg"
     responses:
       200:
         description: 사용자 정보 수정 성공
@@ -192,6 +212,9 @@ def update_user():
                   email:
                     type: string
                     example: "newemail@example.com"
+                  profile_image_url:
+                    type: string
+                    example: "https://k.kakaocdn.net/dn/newprofile.jpg"
       400:
         description: 잘못된 요청
       401:
@@ -201,14 +224,20 @@ def update_user():
     data = request.get_json() or {}
     username = data.get("username")
     email = data.get("email")
-    if not username and not email:
+    profile_image_url = data.get("profile_image_url")
+    if not username and not email and not profile_image_url:
         return make_response({"error": "nothing to update"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "UPDATE users SET username = COALESCE(%s, username), email = COALESCE(%s, email) WHERE id = %s RETURNING id, username, email",
-            (username, email, user_id),
+            """UPDATE users SET 
+               username = COALESCE(%s, username), 
+               email = COALESCE(%s, email),
+               profile_image_url = COALESCE(%s, profile_image_url)
+               WHERE id = %s 
+               RETURNING id, username, email, profile_image_url""",
+            (username, email, profile_image_url, user_id),
         )
         updated = cur.fetchone()
         if not updated:
@@ -353,6 +382,9 @@ def get_user_profile():
                   email:
                     type: string
                     example: "user@example.com"
+                  profile_image_url:
+                    type: string
+                    example: "https://k.kakaocdn.net/dn/profile.jpg"
                   points:
                     type: integer
                     example: 150
@@ -399,7 +431,7 @@ def get_user_profile():
     db = get_db()
     with db.cursor() as cur:
         cur.execute("""
-            SELECT u.id, u.username, u.email, u.points, u.level, u.experience_points,
+            SELECT u.id, u.username, u.email, u.profile_image_url, u.points, u.level, u.experience_points,
                    ul.level_name, ul.description, ul.benefits, u.created_at
             FROM users u
             LEFT JOIN user_levels ul ON u.level = ul.level
@@ -460,7 +492,60 @@ def update_user_level():
 @bp.route("/users/settings", methods=["GET"])
 @jwt_required
 def get_user_settings():
-    """사용자 설정 조회"""
+    """
+    사용자 설정 조회
+    ---
+    tags:
+      - Users
+    summary: 사용자 설정 조회
+    description: 현재 로그인한 사용자의 설정 정보를 조회합니다.
+    security:
+      - JWT: []
+    responses:
+      200:
+        description: 사용자 설정 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 1
+                user_id:
+                  type: integer
+                  example: 1
+                notification_enabled:
+                  type: boolean
+                  example: true
+                location_sharing:
+                  type: boolean
+                  example: false
+                privacy_level:
+                  type: string
+                  enum: ["public", "friends", "private"]
+                  example: "public"
+                preferences:
+                  type: object
+                  example: {"theme": "light", "language": "ko"}
+                created_at:
+                  type: string
+                  format: date-time
+                  example: "2024-01-01T00:00:00Z"
+                updated_at:
+                  type: string
+                  format: date-time
+                  example: "2024-01-01T00:00:00Z"
+      401:
+        description: 인증 실패
+    """
     user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:
@@ -481,7 +566,78 @@ def get_user_settings():
 @bp.route("/users/settings", methods=["PUT"])
 @jwt_required
 def update_user_settings():
-    """사용자 설정 업데이트"""
+    """
+    사용자 설정 업데이트
+    ---
+    tags:
+      - Users
+    summary: 사용자 설정 업데이트
+    description: 현재 로그인한 사용자의 설정 정보를 업데이트합니다.
+    security:
+      - JWT: []
+    parameters:
+      - in: body
+        name: body
+        schema:
+          type: object
+          properties:
+            notification_enabled:
+              type: boolean
+              description: 알림 활성화 여부
+              example: true
+            location_sharing:
+              type: boolean
+              description: 위치 공유 여부
+              example: false
+            privacy_level:
+              type: string
+              enum: ["public", "friends", "private"]
+              description: 개인정보 공개 수준
+              example: "public"
+            preferences:
+              type: object
+              description: 사용자 기본 설정
+              example: {"theme": "dark", "language": "ko"}
+    responses:
+      200:
+        description: 사용자 설정 업데이트 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 1
+                user_id:
+                  type: integer
+                  example: 1
+                notification_enabled:
+                  type: boolean
+                  example: true
+                location_sharing:
+                  type: boolean
+                  example: false
+                privacy_level:
+                  type: string
+                  example: "public"
+                preferences:
+                  type: object
+                  example: {"theme": "dark", "language": "ko"}
+                updated_at:
+                  type: string
+                  format: date-time
+                  example: "2024-01-01T00:00:00Z"
+      401:
+        description: 인증 실패
+    """
     user_id = get_current_user_id()
     data = request.get_json() or {}
     
@@ -532,7 +688,62 @@ def update_user_settings():
 @bp.route("/users/verifications", methods=["GET"])
 @jwt_required
 def get_user_verifications():
-    """사용자 인증 내역 조회"""
+    """
+    사용자 인증 내역 조회
+    ---
+    tags:
+      - Users
+    summary: 사용자 인증 내역 조회
+    description: 현재 로그인한 사용자의 인증 요청 내역을 조회합니다.
+    security:
+      - JWT: []
+    responses:
+      200:
+        description: 사용자 인증 내역 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  user_id:
+                    type: integer
+                    example: 1
+                  verification_type:
+                    type: string
+                    example: "quiz_completion"
+                  source_id:
+                    type: integer
+                    example: 123
+                  proof_data:
+                    type: object
+                    example: {"score": 85, "time_taken": 120}
+                  status:
+                    type: string
+                    enum: ["pending", "approved", "rejected"]
+                    example: "approved"
+                  verified_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T10:30:00Z"
+                  created_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-01T00:00:00Z"
+      401:
+        description: 인증 실패
+    """
     user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:
@@ -549,7 +760,84 @@ def get_user_verifications():
 @bp.route("/users/verifications", methods=["POST"])
 @jwt_required
 def create_verification():
-    """새로운 인증 요청 생성"""
+    """
+    새로운 인증 요청 생성
+    ---
+    tags:
+      - Users
+    summary: 새로운 인증 요청 생성
+    description: 현재 로그인한 사용자가 새로운 인증 요청을 생성합니다.
+    security:
+      - JWT: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - verification_type
+          properties:
+            verification_type:
+              type: string
+              description: 인증 유형
+              example: "quiz_completion"
+            source_id:
+              type: integer
+              description: "관련 소스 ID (예: 퀴즈 ID)"
+              example: 123
+            proof_data:
+              type: object
+              description: 인증 증명 데이터
+              example: {"score": 95, "time_taken": 90}
+    responses:
+      201:
+        description: 인증 요청 생성 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 201
+            message:
+              type: string
+              example: "Created"
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 1
+                user_id:
+                  type: integer
+                  example: 1
+                verification_type:
+                  type: string
+                  example: "quiz_completion"
+                source_id:
+                  type: integer
+                  example: 123
+                proof_data:
+                  type: object
+                  example: {"score": 95, "time_taken": 90}
+                status:
+                  type: string
+                  example: "pending"
+                created_at:
+                  type: string
+                  format: date-time
+                  example: "2024-01-01T00:00:00Z"
+      400:
+        description: 잘못된 요청
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              example: "verification_type required"
+      401:
+        description: 인증 실패
+    """
     user_id = get_current_user_id()
     data = request.get_json() or {}
     verification_type = data.get("verification_type")
@@ -575,10 +863,152 @@ def create_verification():
 @bp.route("/levels", methods=["GET"])
 @jwt_required
 def get_all_levels():
-    """모든 레벨 정보 조회"""
+    """
+    모든 레벨 정보 조회
+    ---
+    tags:
+      - Users
+    summary: 모든 사용자 레벨 정보 조회
+    description: 시스템에 정의된 모든 사용자 레벨 정보를 조회합니다.
+    security:
+      - JWT: []
+    responses:
+      200:
+        description: 레벨 정보 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  level:
+                    type: integer
+                    example: 1
+                  name:
+                    type: string
+                    example: "초보자"
+                  required_points:
+                    type: integer
+                    example: 0
+                  required_experience:
+                    type: integer
+                    example: 0
+                  badge_url:
+                    type: string
+                    example: "/static/badges/beginner.png"
+                  description:
+                    type: string
+                    example: "자전거 이용을 시작한 초보자 레벨입니다"
+                  created_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-01T00:00:00Z"
+      401:
+        description: 인증 실패
+    """
     db = get_db()
     with db.cursor() as cur:
         cur.execute("SELECT * FROM user_levels ORDER BY level")
         levels = cur.fetchall()
     
     return make_response([dict(level) for level in levels])
+
+@bp.route("/dev/test-token", methods=["GET"])
+def get_test_token():
+    """
+    개발용 테스트 토큰 생성 (개발 환경에서만 사용)
+    ---
+    tags:
+      - Development
+    summary: 개발용 JWT 토큰 생성
+    description: 프론트엔드 개발을 위한 테스트용 JWT 토큰을 생성합니다. (개발 환경에서만 동작)
+    parameters:
+      - in: query
+        name: user_type
+        type: string
+        enum: [user, admin]
+        default: user
+        description: 사용자 타입 (user 또는 admin)
+    responses:
+      200:
+        description: 테스트 토큰 생성 성공
+        schema:
+          type: object
+          properties:
+            access_token:
+              type: string
+              description: JWT 토큰
+            user_id:
+              type: integer
+              description: 사용자 ID
+            user_type:
+              type: string
+              description: 사용자 타입
+      403:
+        description: 프로덕션 환경에서는 사용 불가
+    """
+    # 프로덕션 환경에서는 비활성화
+    if os.environ.get('FLASK_ENV') == 'production':
+        return make_response({"error": "Not available in production"}, 403)
+    
+    user_type = request.args.get('user_type', 'user')
+    
+    # 테스트용 사용자 생성/조회
+    db = get_db()
+    with db.cursor() as cur:
+        if user_type == 'admin':
+            # 기존 테스트 관리자 조회
+            cur.execute("""
+                SELECT id, username, email, is_admin FROM users 
+                WHERE kakao_id = 'test_admin_kakao_id'
+            """)
+            user = cur.fetchone()
+            
+            if not user:
+                # 새로 생성
+                cur.execute("""
+                    INSERT INTO users (kakao_id, username, email, is_admin) 
+                    VALUES ('test_admin_kakao_id', 'test_admin', 'admin@test.com', true)
+                    RETURNING id, username, email, is_admin
+                """)
+                user = cur.fetchone()
+        else:
+            # 기존 테스트 사용자 조회
+            cur.execute("""
+                SELECT id, username, email, is_admin FROM users 
+                WHERE kakao_id = 'test_user_kakao_id'
+            """)
+            user = cur.fetchone()
+            
+            if not user:
+                # 새로 생성
+                cur.execute("""
+                    INSERT INTO users (kakao_id, username, email, is_admin) 
+                    VALUES ('test_user_kakao_id', 'test_user', 'user@test.com', false)
+                    RETURNING id, username, email, is_admin
+                """)
+                user = cur.fetchone()
+        
+        user_id = user['id']
+    
+    # JWT 토큰 생성
+    token = generate_jwt_token(user_id)
+    
+    return make_response({
+        "access_token": token,
+        "user_id": user_id,
+        "user_type": user_type,
+        "username": user['username'],
+        "email": user['email']
+    })

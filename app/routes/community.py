@@ -391,7 +391,66 @@ def toggle_like(post_id):
 @bp.route("/users/safety-reports", methods=["GET"])
 @jwt_required
 def get_safety_reports():
-    """안전 신고 내역 조회"""
+    """
+    안전 신고 내역 조회
+    ---
+    tags:
+      - Community
+    summary: 사용자의 안전 신고 내역 조회
+    description: 현재 로그인한 사용자가 생성한 안전 신고 내역을 조회합니다.
+    security:
+      - JWT: []
+    responses:
+      200:
+        description: 안전 신고 내역 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  user_id:
+                    type: integer
+                    example: 1
+                  report_type:
+                    type: string
+                    enum: ["accident", "hazard", "maintenance", "theft"]
+                    example: "hazard"
+                  latitude:
+                    type: number
+                    example: 37.5665
+                  longitude:
+                    type: number
+                    example: 126.9780
+                  description:
+                    type: string
+                    example: "도로에 구멍이 있어서 위험합니다"
+                  status:
+                    type: string
+                    enum: ["pending", "reviewed", "resolved"]
+                    example: "pending"
+                  created_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T10:30:00Z"
+                  updated_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T10:30:00Z"
+      401:
+        description: 인증 실패
+    """
     user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:
@@ -408,7 +467,93 @@ def get_safety_reports():
 @bp.route("/users/safety-reports", methods=["POST"])
 @jwt_required
 def create_safety_report():
-    """안전 신고 생성"""
+    """
+    안전 신고 생성
+    ---
+    tags:
+      - Community
+    summary: 새로운 안전 신고 생성
+    description: 현재 로그인한 사용자가 새로운 안전 신고를 생성합니다.
+    security:
+      - JWT: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - report_type
+            - description
+          properties:
+            report_type:
+              type: string
+              enum: ["accident", "hazard", "maintenance", "theft"]
+              description: 신고 유형
+              example: "hazard"
+            latitude:
+              type: number
+              description: 위도
+              example: 37.5665
+            longitude:
+              type: number
+              description: 경도
+              example: 126.9780
+            description:
+              type: string
+              description: 신고 내용 설명
+              example: "도로에 구멍이 있어서 위험합니다"
+    responses:
+      201:
+        description: 안전 신고 생성 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 201
+            message:
+              type: string
+              example: "Created"
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 1
+                user_id:
+                  type: integer
+                  example: 1
+                report_type:
+                  type: string
+                  example: "hazard"
+                latitude:
+                  type: number
+                  example: 37.5665
+                longitude:
+                  type: number
+                  example: 126.9780
+                description:
+                  type: string
+                  example: "도로에 구멍이 있어서 위험합니다"
+                status:
+                  type: string
+                  example: "pending"
+                created_at:
+                  type: string
+                  format: date-time
+                  example: "2024-01-15T10:30:00Z"
+      400:
+        description: 잘못된 요청
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              example: "report_type, description required"
+      401:
+        description: 인증 실패
+    """
     user_id = get_current_user_id()
     data = request.get_json() or {}
     report_type = data.get("report_type")

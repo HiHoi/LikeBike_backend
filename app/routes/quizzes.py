@@ -126,6 +126,87 @@ def create_quiz():
 @bp.route("/admin/quizzes/<int:quiz_id>", methods=["PUT"])
 @admin_required
 def update_quiz(quiz_id):
+    """
+    퀴즈 수정 (관리자)
+    ---
+    tags:
+      - Quizzes
+    summary: 기존 퀴즈 수정 (관리자 전용)
+    description: 관리자 권한으로 기존 퀴즈 정보를 수정합니다.
+    security:
+      - JWT: []
+      - AdminHeader: []
+    parameters:
+      - in: path
+        name: quiz_id
+        required: true
+        type: integer
+        description: 수정할 퀴즈 ID
+        example: 1
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - question
+            - correct_answer
+            - answers
+          properties:
+            question:
+              type: string
+              description: 퀴즈 질문
+              example: "자전거 안전을 위해 반드시 착용해야 하는 것은?"
+            correct_answer:
+              type: string
+              description: 정답
+              example: "헬멧"
+            answers:
+              type: array
+              description: 선택지 배열 (정답 포함)
+              items:
+                type: string
+              example: ["모자", "선글라스", "헬멧", "장갑"]
+    responses:
+      200:
+        description: 퀴즈 수정 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  question:
+                    type: string
+                    example: "자전거 안전을 위해 반드시 착용해야 하는 것은?"
+                  correct_answer:
+                    type: string
+                    example: "헬멧"
+                  answers:
+                    type: array
+                    items:
+                      type: string
+                    example: ["모자", "선글라스", "헬멧", "장갑"]
+      400:
+        description: 잘못된 요청
+      401:
+        description: 인증 실패
+      403:
+        description: 관리자 권한 필요
+      404:
+        description: 퀴즈를 찾을 수 없음
+    """
     data = request.get_json() or {}
     question = data.get("question")
     correct_answer = data.get("correct_answer")
@@ -149,6 +230,39 @@ def update_quiz(quiz_id):
 @bp.route("/admin/quizzes/<int:quiz_id>", methods=["DELETE"])
 @admin_required
 def delete_quiz(quiz_id):
+    """
+    퀴즈 삭제 (관리자)
+    ---
+    tags:
+      - Quizzes
+    summary: 기존 퀴즈 삭제 (관리자 전용)
+    description: 관리자 권한으로 기존 퀴즈를 삭제합니다.
+    security:
+      - JWT: []
+      - AdminHeader: []
+    parameters:
+      - in: path
+        name: quiz_id
+        required: true
+        type: integer
+        description: 삭제할 퀴즈 ID
+        example: 1
+    responses:
+      204:
+        description: 퀴즈 삭제 성공 (No Content)
+      401:
+        description: 인증 실패
+      403:
+        description: 관리자 권한 필요
+      404:
+        description: 퀴즈를 찾을 수 없음
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              example: "quiz not found"
+    """
     db = get_db()
     with db.cursor() as cur:
         cur.execute("DELETE FROM quizzes WHERE id = %s", (quiz_id,))
@@ -339,6 +453,89 @@ def attempt_quiz(quiz_id):
 @bp.route("/admin/quizzes/generate", methods=["POST"])
 @admin_required
 def generate_quiz():
+    """
+    AI 퀴즈 생성 (관리자)
+    ---
+    tags:
+      - Quizzes
+    summary: AI를 활용한 퀴즈 자동 생성 (관리자 전용)
+    description: Clova X API를 사용하여 주제에 따른 퀴즈를 자동으로 생성합니다.
+    security:
+      - JWT: []
+      - AdminHeader: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - prompt
+          properties:
+            prompt:
+              type: string
+              description: 퀴즈 생성을 위한 주제나 키워드
+              example: "자전거 안전 운행에 대한 문제"
+    responses:
+      200:
+        description: 퀴즈 생성 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  question:
+                    type: string
+                    example: "자전거 안전을 위해 반드시 착용해야 하는 것은?"
+                  correct_answer:
+                    type: string
+                    example: "헬멧"
+                  answers:
+                    type: array
+                    items:
+                      type: string
+                    example: ["모자", "선글라스", "헬멧", "장갑"]
+      400:
+        description: 잘못된 요청
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              example: "prompt required"
+      401:
+        description: 인증 실패
+      403:
+        description: 관리자 권한 필요
+      500:
+        description: 서버 설정 오류
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              example: "CLOVA_API_KEY not set"
+      502:
+        description: 외부 API 호출 실패
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              example: "Failed to call Clova X"
+    """
     data = request.get_json() or {}
     prompt = data.get("prompt")
     if not prompt:
