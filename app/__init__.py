@@ -13,7 +13,6 @@ from .routes.news import bp as news_bp
 from .routes.quizzes import bp as quizzes_bp
 from .routes.users import bp as users_bp
 
-
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
 
@@ -85,29 +84,50 @@ def create_app(test_config=None):
 
     db.init_app(app)
     
-    # 프로덕션에서도 스키마 초기화 (빈 데이터베이스인 경우에만)
-    if not test_config:
-        with app.app_context():
-            try:
-                from .db import get_db
-                db_conn = get_db()
-                with db_conn.cursor() as cur:
-                    # users 테이블이 존재하는지 확인
+    # 스키마 초기화 개선
+    def ensure_schema():
+        try:
+            from .db import get_db, init_db
+            print("Checking database schema...")
+            db_conn = get_db()
+            with db_conn.cursor() as cur:
+                # 여러 테이블 확인
+                tables_to_check = ['users', 'quizzes', 'news', 'bike_logs', 'community_posts']
+                missing_tables = []
+                
+                for table in tables_to_check:
                     cur.execute("""
                         SELECT EXISTS (
                             SELECT FROM information_schema.tables 
-                            WHERE table_name = 'users'
+                            WHERE table_name = %s
                         )
-                    """)
-                    table_exists = cur.fetchone()[0]
-                    
-                    if not table_exists:
-                        print("Initializing database schema...")
-                        from .db import init_db
-                        init_db()
-                        print("Database schema initialized successfully")
-            except Exception as e:
-                print(f"Schema initialization failed: {e}")
+                    """, (table,))
+                    if not cur.fetchone()[0]:
+                        missing_tables.append(table)
+                
+                if missing_tables:
+                    print(f"Missing tables: {missing_tables}")
+                    print("Initializing database schema...")
+                    init_db()
+                    print("Database schema initialized successfully")
+                else:
+                    print("Database schema is up to date")
+        except Exception as e:
+            print(f"Schema initialization failed: {e}")
+            # 스키마 초기화 실패 시에도 애플리케이션은 계속 실행
+            import traceback
+            traceback.print_exc()
+    
+    # 애플리케이션 시작 시 스키마 확인
+    if not test_config:
+        with app.app_context():
+            ensure_schema()
+
+    # 각 요청 전에 스키마 확인 (첫 번째 요청에서만)
+    @app.before_first_request
+    def check_schema_on_first_request():
+        with app.app_context():
+            ensure_schema()
 
     app.register_blueprint(main_blueprint)
     app.register_blueprint(quizzes_bp)
