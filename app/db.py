@@ -8,7 +8,6 @@ from flask.cli import with_appcontext
 
 SCHEMA_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "schema.sql")
 
-
 def get_db():
     if "db" not in g:
         try:
@@ -25,14 +24,37 @@ def get_db():
                 connection_params = {
                     'host': os.environ.get("DB_HOST", current_app.config.get("DB_HOST", "localhost")),
                     'port': int(os.environ.get("DB_PORT", current_app.config.get("DB_PORT", 5432))),
-                    'database': os.environ.get("DB_NAME", current_app.config.get("DB_NAME", "likebike")),
+                    'database': os.environ.get("DB_NAME", current_app.config.get("DB_NAME", "postgres")),  # 기본값을 postgres로 변경
                     'user': os.environ.get("DB_USER", current_app.config.get("DB_USER", os.environ.get("USER"))),
                     'password': os.environ.get("DB_PASSWORD", current_app.config.get("DB_PASSWORD", "")),
                     'cursor_factory': psycopg2.extras.RealDictCursor
                 }
                 
-                print(f"Connecting to database: {connection_params['host']}:{connection_params['port']}")
-                g.db = psycopg2.connect(**connection_params)
+                print(f"Connecting to database: {connection_params['host']}:{connection_params['port']}/{connection_params['database']}")
+                
+                try:
+                    g.db = psycopg2.connect(**connection_params)
+                except psycopg2.OperationalError as e:
+                    if "database" in str(e) and "does not exist" in str(e):
+                        # likebike 데이터베이스가 없으면 생성 시도
+                        temp_params = connection_params.copy()
+                        temp_params['database'] = 'postgres'  # 기본 데이터베이스로 연결
+                        
+                        temp_conn = psycopg2.connect(**temp_params)
+                        temp_conn.autocommit = True
+                        
+                        with temp_conn.cursor() as cur:
+                            target_db = os.environ.get("DB_NAME", "likebike")
+                            cur.execute(f'CREATE DATABASE "{target_db}"')
+                            print(f"Created database: {target_db}")
+                        
+                        temp_conn.close()
+                        
+                        # 새로 생성된 데이터베이스로 다시 연결
+                        connection_params['database'] = target_db
+                        g.db = psycopg2.connect(**connection_params)
+                    else:
+                        raise
             
             g.db.autocommit = True
             

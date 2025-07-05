@@ -84,6 +84,30 @@ def create_app(test_config=None):
         pass
 
     db.init_app(app)
+    
+    # 프로덕션에서도 스키마 초기화 (빈 데이터베이스인 경우에만)
+    if not test_config:
+        with app.app_context():
+            try:
+                from .db import get_db
+                db_conn = get_db()
+                with db_conn.cursor() as cur:
+                    # users 테이블이 존재하는지 확인
+                    cur.execute("""
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables 
+                            WHERE table_name = 'users'
+                        )
+                    """)
+                    table_exists = cur.fetchone()[0]
+                    
+                    if not table_exists:
+                        print("Initializing database schema...")
+                        from .db import init_db
+                        init_db()
+                        print("Database schema initialized successfully")
+            except Exception as e:
+                print(f"Schema initialization failed: {e}")
 
     app.register_blueprint(main_blueprint)
     app.register_blueprint(quizzes_bp)
