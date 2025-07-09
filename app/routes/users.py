@@ -1002,13 +1002,19 @@ def get_test_token():
         
         user_id = user['id']
     
-    # JWT 토큰 생성
-    token = generate_jwt_token(user_id)
+    # JWT 토큰 생성 (is_admin 정보 포함)
+    token = generate_jwt_token(
+        user_id=user_id,
+        username=user['username'],
+        email=user['email'],
+        is_admin=user['is_admin']
+    )
     
     return make_response({
         "access_token": token,
         "user_id": user_id,
         "user_type": user_type,
         "username": user['username'],
-        "email": user['email']
+        "email": user['email'],
+        "is_admin": user['is_admin']
     })

@@ -8,6 +8,8 @@ DROP TABLE IF EXISTS favorites CASCADE;
 DROP TABLE IF EXISTS safety_reports CASCADE;
 DROP TABLE IF EXISTS notifications CASCADE;
 DROP TABLE IF EXISTS route_points CASCADE;
+DROP TABLE IF EXISTS user_quiz_explanation_views CASCADE;
+DROP TABLE IF EXISTS quiz_explanations CASCADE;
 DROP TABLE IF EXISTS user_quiz_attempts CASCADE;
 DROP TABLE IF EXISTS user_verifications CASCADE;
 DROP TABLE IF EXISTS user_settings CASCADE;
@@ -82,21 +84,39 @@ CREATE TABLE user_quiz_attempts (
     FOREIGN KEY (quiz_id) REFERENCES quizzes (id) ON DELETE CASCADE
 );
 
+CREATE TABLE quiz_explanations (
+    id SERIAL PRIMARY KEY,
+    quiz_id INTEGER NOT NULL,
+    explanation TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (quiz_id) REFERENCES quizzes (id) ON DELETE CASCADE
+);
+
+CREATE TABLE user_quiz_explanation_views (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    quiz_id INTEGER NOT NULL,
+    reward_given BOOLEAN DEFAULT FALSE,
+    viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (quiz_id) REFERENCES quizzes (id) ON DELETE CASCADE
+);
+
 CREATE TABLE bike_usage_logs (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL,
-    description TEXT,
-    start_latitude DECIMAL(10, 8),
-    start_longitude DECIMAL(11, 8),
-    end_latitude DECIMAL(10, 8),
-    end_longitude DECIMAL(11, 8),
-    distance DECIMAL(8, 2),
-    duration_minutes INTEGER,
-    start_time TIMESTAMP,
-    end_time TIMESTAMP,
-    status VARCHAR(50) DEFAULT 'completed',
-    usage_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    description TEXT NOT NULL,
+    bike_photo_url VARCHAR(512),
+    safety_gear_photo_url VARCHAR(512),
+    verification_status VARCHAR(50) DEFAULT 'pending',
+    verified_by_admin_id INTEGER,
+    admin_notes TEXT,
+    points_awarded INTEGER DEFAULT 0,
+    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    verified_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (verified_by_admin_id) REFERENCES users (id) ON DELETE SET NULL
 );
 
 CREATE TABLE news (

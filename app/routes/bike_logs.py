@@ -1,506 +1,122 @@
+import os
+import uuid
+from werkzeug.utils import secure_filename
 from flask import Blueprint, request
+import boto3
+from botocore.exceptions import ClientError
 
 from ..utils.responses import make_response
-from ..utils.auth import jwt_required, get_current_user_id
+from ..utils.auth import jwt_required, admin_required, get_current_user_id
 
 from ..db import get_db
 
 bp = Blueprint("bike_logs", __name__)
+
+# NCP Object Storage 설정
+NCP_ACCESS_KEY = os.environ.get("NCP_ACCESS_KEY")
+NCP_SECRET_KEY = os.environ.get("NCP_SECRET_KEY")
+NCP_REGION = os.environ.get("NCP_REGION", "kr-standard")
+NCP_ENDPOINT = os.environ.get("NCP_ENDPOINT", "https://kr.object.ncloudstorage.com")
+NCP_BUCKET_NAME = os.environ.get("NCP_BUCKET_NAME")
+
+# S3 클라이언트 생성 (NCP Object Storage는 S3 호환)
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=NCP_ACCESS_KEY,
+    aws_secret_access_key=NCP_SECRET_KEY,
+    region_name=NCP_REGION,
+    endpoint_url=NCP_ENDPOINT
+) if all([NCP_ACCESS_KEY, NCP_SECRET_KEY, NCP_BUCKET_NAME]) else None
+
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+def allowed_file(filename):
+    """허용된 파일 확장자인지 확인"""
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def upload_file_to_ncp(file, folder_name="bike_logs"):
+    """NCP Object Storage에 파일 업로드"""
+    if not s3_client:
+        return None, "NCP Object Storage 설정이 완료되지 않았습니다"
+        
+    if not file or file.filename == '':
+        return None, "파일이 선택되지 않았습니다"
+    
+    if not allowed_file(file.filename):
+        return None, f"허용되지 않는 파일 형식입니다. 허용: {', '.join(ALLOWED_EXTENSIONS)}"
+    
+    # 파일 크기 체크
+    file.seek(0, 2)  # 파일 끝으로 이동
+    file_size = file.tell()
+    file.seek(0)  # 파일 처음으로 되돌아가기
+    
+    if file_size > MAX_FILE_SIZE:
+        return None, f"파일 크기가 너무 큽니다. 최대 {MAX_FILE_SIZE // (1024*1024)}MB"
+    
+    # 안전한 파일명 생성
+    filename = secure_filename(file.filename)
+    file_extension = filename.rsplit('.', 1)[1].lower()
+    unique_filename = f"{uuid.uuid4().hex}.{file_extension}"
+    object_key = f"{folder_name}/{unique_filename}"
+    
+    try:
+        # NCP Object Storage에 업로드
+        s3_client.upload_fileobj(
+            file,
+            NCP_BUCKET_NAME,
+            object_key,
+            ExtraArgs={
+                'ContentType': file.content_type or 'application/octet-stream'
+            }
+        )
+        
+        # 업로드된 파일의 URL 생성
+        file_url = f"{NCP_ENDPOINT}/{NCP_BUCKET_NAME}/{object_key}"
+        return file_url, None
+        
+    except ClientError as e:
+        return None, f"파일 업로드 실패: {str(e)}"
+    except Exception as e:
+        return None, f"알 수 없는 오류: {str(e)}"
 
 
 @bp.route("/users/bike-logs", methods=["POST"])
 @jwt_required
 def create_bike_log():
     """
-    자전거 이용 로그 생성
+    자전거 활동 기록 생성
     ---
     tags:
       - Bike Logs
-    summary: 자전거 이용 기록 생성
-    description: 자전거 이용 기록을 생성하고 보상을 지급합니다.
+    summary: 자전거 활동 시작 기록 및 사진 업로드
+    description: 자전거 활동을 시작하고 자전거 사진과 안전 장비 사진을 업로드합니다.
     security:
       - JWT: []
+    consumes:
+      - multipart/form-data
     parameters:
-      - in: body
-        name: body
+      - in: formData
+        name: description
+        type: string
         required: true
-        schema:
-          type: object
-          required:
-            - description
-          properties:
-            description:
-              type: string
-              description: 라이딩 설명
-              example: "한강 라이딩"
-            start_latitude:
-              type: number
-              format: float
-              description: 시작점 위도
-              example: 37.5665
-            start_longitude:
-              type: number
-              format: float
-              description: 시작점 경도
-              example: 126.978
-            end_latitude:
-              type: number
-              format: float
-              description: 도착점 위도
-              example: 37.5702
-            end_longitude:
-              type: number
-              format: float
-              description: 도착점 경도
-              example: 126.9861
-            distance:
-              type: number
-              format: float
-              description: 이동 거리 (km)
-              example: 5.2
-            duration_minutes:
-              type: integer
-              description: 소요 시간 (분)
-              example: 45
-            start_time:
-              type: string
-              format: date-time
-              description: 시작 시간
-              example: "2024-01-01T09:00:00Z"
-            end_time:
-              type: string
-              format: date-time
-              description: 종료 시간
-              example: "2024-01-01T09:45:00Z"
+        description: 활동 설명
+      - in: formData
+        name: bike_photo
+        type: file
+        required: true
+        description: 자전거 사진
+      - in: formData
+        name: safety_gear_photo
+        type: file
+        required: true
+        description: 안전 장비 사진
     responses:
       201:
-        description: 자전거 로그 생성 성공
-        schema:
-          type: object
-          properties:
-            code:
-              type: integer
-              example: 201
-            message:
-              type: string
-              example: "Created"
-            data:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                    example: 1
-                  user_id:
-                    type: integer
-                    example: 1
-                  description:
-                    type: string
-                    example: "한강 라이딩"
-                  start_latitude:
-                    type: number
-                    example: 37.5665
-                  start_longitude:
-                    type: number
-                    example: 126.978
-                  end_latitude:
-                    type: number
-                    example: 37.5702
-                  end_longitude:
-                    type: number
-                    example: 126.9861
-                  distance:
-                    type: number
-                    example: 5.2
-                  duration_minutes:
-                    type: integer
-                    example: 45
-                  start_time:
-                    type: string
-                    example: "2024-01-01T09:00:00Z"
-                  end_time:
-                    type: string
-                    example: "2024-01-01T09:45:00Z"
-                  usage_time:
-                    type: string
-                    example: "2024-01-01T09:00:00Z"
-                  points_earned:
-                    type: integer
-                    example: 15
-                  experience_earned:
-                    type: integer
-                    example: 8
-      400:
-        description: 잘못된 요청
-      401:
-        description: 인증 실패
-    """
-    user_id = get_current_user_id()
-    data = request.get_json() or {}
-    description = data.get("description")
-    start_latitude = data.get("start_latitude")
-    start_longitude = data.get("start_longitude")
-    end_latitude = data.get("end_latitude")
-    end_longitude = data.get("end_longitude")
-    distance = data.get("distance")
-    duration_minutes = data.get("duration_minutes")
-    start_time = data.get("start_time")
-    end_time = data.get("end_time")
-    
-    if not description:
-        return make_response({"error": "description required"}, 400)
-
-    db = get_db()
-    with db.cursor() as cur:
-        cur.execute("""
-            INSERT INTO bike_usage_logs 
-            (user_id, description, start_latitude, start_longitude, end_latitude, end_longitude, 
-             distance, duration_minutes, start_time, end_time) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
-            RETURNING id, user_id, description, start_latitude, start_longitude, 
-                      end_latitude, end_longitude, distance, duration_minutes, 
-                      start_time, end_time, usage_time
-        """, (user_id, description, start_latitude, start_longitude, end_latitude, 
-              end_longitude, distance, duration_minutes, start_time, end_time))
-        log = cur.fetchone()
-        
-        # 자전거 이용 보상 지급
-        points = 5   # 자전거 이용 시 5포인트
-        exp = 3      # 자전거 이용 시 3경험치
-        
-        # 거리 기반 추가 보상
-        if distance:
-            bonus_points = int(distance * 2)  # 1km당 2포인트 추가
-            bonus_exp = int(distance)         # 1km당 1경험치 추가
-            points += bonus_points
-            exp += bonus_exp
-        
-        # 포인트 업데이트
-        cur.execute("""
-            UPDATE users 
-            SET points = points + %s, experience_points = experience_points + %s 
-            WHERE id = %s
-        """, (points, exp, user_id))
-        
-        # 보상 기록
-        cur.execute("""
-            INSERT INTO rewards 
-            (user_id, source_type, source_id, points, experience_points, reward_reason)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (user_id, "bike_usage", log["id"], points, exp, f"자전거 이용 ({distance}km)" if distance else "자전거 이용"))
-        
-        # 목표 업데이트 (거리 목표가 있다면)
-        if distance:
-            cur.execute("""
-                UPDATE cycling_goals 
-                SET current_value = current_value + %s 
-                WHERE user_id = %s AND goal_type = 'distance' AND status = 'active'
-                  AND start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE
-            """, (distance, user_id))
-
-    response_data = dict(log)
-    response_data.update({
-        "points_earned": points,
-        "experience_earned": exp
-    })
-
-    return make_response(response_data, 201)
-
-
-@bp.route("/users/bike-logs", methods=["GET"])
-@jwt_required
-def list_bike_logs():
-    """
-    자전거 이용 로그 목록 조회
-    ---
-    tags:
-      - Bike Logs
-    summary: 사용자의 자전거 이용 기록 목록 조회
-    description: 현재 사용자의 자전거 이용 기록들을 조회합니다.
-    security:
-      - JWT: []
-    responses:
-      200:
-        description: 자전거 로그 목록 조회 성공
-        schema:
-          type: object
-          properties:
-            code:
-              type: integer
-              example: 200
-            message:
-              type: string
-              example: "OK"
-            data:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                    example: 1
-                  user_id:
-                    type: integer
-                    example: 1
-                  description:
-                    type: string
-                    example: "한강 라이딩"
-                  usage_time:
-                    type: string
-                    format: date-time
-                    example: "2024-01-01T09:00:00Z"
-      401:
-        description: 인증 실패
-    """
-    user_id = get_current_user_id()
-    db = get_db()
-    with db.cursor() as cur:
-        cur.execute(
-            "SELECT id, user_id, description, usage_time FROM bike_usage_logs WHERE user_id = %s ORDER BY usage_time DESC",
-            (user_id,),
-        )
-        logs = cur.fetchall()
-
-    return make_response(logs)
-
-
-@bp.route("/bike-logs/<int:log_id>", methods=["PUT"])
-@jwt_required
-def update_bike_log(log_id):
-    data = request.get_json() or {}
-    description = data.get("description")
-    if description is None:
-        return make_response({"error": "description required"}, 400)
-
-    db = get_db()
-    with db.cursor() as cur:
-        cur.execute(
-            "UPDATE bike_usage_logs SET description = %s WHERE id = %s RETURNING id, user_id, description, usage_time",
-            (description, log_id),
-        )
-        log = cur.fetchone()
-        if not log:
-            return make_response({"error": "log not found"}, 404)
-
-    return make_response(dict(log))
-
-
-@bp.route("/bike-logs/<int:log_id>", methods=["DELETE"])
-@jwt_required
-def delete_bike_log(log_id):
-    db = get_db()
-    with db.cursor() as cur:
-        cur.execute("DELETE FROM bike_usage_logs WHERE id = %s", (log_id,))
-        if cur.rowcount == 0:
-            return make_response({"error": "log not found"}, 404)
-
-    return make_response(None, 204)
-
-
-@bp.route("/users/rewards", methods=["GET"])
-@jwt_required
-def get_user_rewards():
-    """
-    사용자 포인트 적립 내역 조회
-    ---
-    tags:
-      - Bike Logs
-    summary: 사용자의 포인트 적립 내역 조회
-    description: 현재 로그인한 사용자의 포인트 적립 내역을 조회합니다.
-    security:
-      - JWT: []
-    responses:
-      200:
-        description: 포인트 적립 내역 조회 성공
-        schema:
-          type: object
-          properties:
-            code:
-              type: integer
-              example: 200
-            message:
-              type: string
-              example: "OK"
-            data:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                    example: 1
-                  user_id:
-                    type: integer
-                    example: 1
-                  source:
-                    type: string
-                    example: "bike_usage"
-                  source_id:
-                    type: integer
-                    example: 123
-                  points:
-                    type: integer
-                    example: 10
-                  exp:
-                    type: integer
-                    example: 15
-                  description:
-                    type: string
-                    example: "자전거 이용 (3.5km)"
-                  created_at:
-                    type: string
-                    format: date-time
-                    example: "2024-01-15T10:30:00Z"
-      401:
-        description: 인증 실패
-    """
-    user_id = get_current_user_id()
-    db = get_db()
-    with db.cursor() as cur:
-        cur.execute("""
-            SELECT * FROM rewards 
-            WHERE user_id = %s 
-            ORDER BY created_at DESC
-        """, (user_id,))
-        rewards = cur.fetchall()
-
-    return make_response([dict(reward) for reward in rewards])
-
-
-@bp.route("/users/cycling-goals", methods=["GET"])
-@jwt_required
-def get_cycling_goals():
-    """
-    사용자 사이클링 목표 조회
-    ---
-    tags:
-      - Bike Logs
-    summary: 사용자의 사이클링 목표 조회
-    description: 현재 로그인한 사용자의 사이클링 목표 목록을 조회합니다.
-    security:
-      - JWT: []
-    responses:
-      200:
-        description: 사이클링 목표 조회 성공
-        schema:
-          type: object
-          properties:
-            code:
-              type: integer
-              example: 200
-            message:
-              type: string
-              example: "OK"
-            data:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                    example: 1
-                  user_id:
-                    type: integer
-                    example: 1
-                  goal_type:
-                    type: string
-                    enum: ["distance", "duration", "frequency"]
-                    example: "distance"
-                  target_value:
-                    type: number
-                    example: 50.0
-                  period_type:
-                    type: string
-                    enum: ["daily", "weekly", "monthly"]
-                    example: "weekly"
-                  start_date:
-                    type: string
-                    format: date
-                    example: "2024-01-01"
-                  end_date:
-                    type: string
-                    format: date
-                    example: "2024-01-07"
-                  current_value:
-                    type: number
-                    example: 25.5
-                  status:
-                    type: string
-                    enum: ["active", "completed", "failed"]
-                    example: "active"
-                  created_at:
-                    type: string
-                    format: date-time
-                    example: "2024-01-01T00:00:00Z"
-      401:
-        description: 인증 실패
-    """
-    user_id = get_current_user_id()
-    db = get_db()
-    with db.cursor() as cur:
-        cur.execute("""
-            SELECT * FROM cycling_goals 
-            WHERE user_id = %s 
-            ORDER BY created_at DESC
-        """, (user_id,))
-        goals = cur.fetchall()
-
-    return make_response([dict(goal) for goal in goals])
-
-
-@bp.route("/users/cycling-goals", methods=["POST"])
-@jwt_required
-def create_cycling_goal():
-    """
-    새로운 사이클링 목표 생성
-    ---
-    tags:
-      - Bike Logs
-    summary: 새로운 사이클링 목표 생성
-    description: 현재 로그인한 사용자의 새로운 사이클링 목표를 생성합니다.
-    security:
-      - JWT: []
-    parameters:
-      - in: body
-        name: body
-        required: true
-        schema:
-          type: object
-          required:
-            - goal_type
-            - target_value
-            - period_type
-            - start_date
-            - end_date
-          properties:
-            goal_type:
-              type: string
-              enum: ["distance", "duration", "frequency"]
-              description: 목표 유형
-              example: "distance"
-            target_value:
-              type: number
-              description: 목표 수치
-              example: 50.0
-            period_type:
-              type: string
-              enum: ["daily", "weekly", "monthly"]
-              description: 기간 유형
-              example: "weekly"
-            start_date:
-              type: string
-              format: date
-              description: 시작일
-              example: "2024-01-01"
-            end_date:
-              type: string
-              format: date
-              description: 종료일
-              example: "2024-01-07"
-    responses:
-      201:
-        description: 사이클링 목표 생성 성공
+        description: 자전거 활동 기록 생성 성공
         schema:
           type: object
           properties:
@@ -519,83 +135,213 @@ def create_cycling_goal():
                 user_id:
                   type: integer
                   example: 1
-                goal_type:
+                description:
                   type: string
-                  example: "distance"
-                target_value:
-                  type: number
-                  example: 50.0
-                period_type:
+                  example: "한강 라이딩"
+                bike_photo_url:
                   type: string
-                  example: "weekly"
-                start_date:
+                  example: "https://kr.object.ncloudstorage.com/bucket/bike_logs/abc123.jpg"
+                safety_gear_photo_url:
                   type: string
-                  format: date
-                  example: "2024-01-01"
-                end_date:
+                  example: "https://kr.object.ncloudstorage.com/bucket/bike_logs/def456.jpg"
+                verification_status:
                   type: string
-                  format: date
-                  example: "2024-01-07"
-                current_value:
-                  type: number
-                  example: 0
-                status:
+                  example: "pending"
+                started_at:
                   type: string
-                  example: "active"
-                created_at:
-                  type: string
-                  format: date-time
-                  example: "2024-01-01T00:00:00Z"
+                  example: "2024-01-01T09:00:00Z"
       400:
         description: 잘못된 요청
+      401:
+        description: 인증 실패
+      500:
+        description: 파일 업로드 실패
+    """
+    user_id = get_current_user_id()
+    
+    # 폼 데이터에서 값 가져오기
+    description = request.form.get("description")
+    if not description:
+        return make_response({"error": "description required"}, 400)
+    
+    # 파일 확인
+    if 'bike_photo' not in request.files or 'safety_gear_photo' not in request.files:
+        return make_response({"error": "bike_photo and safety_gear_photo required"}, 400)
+    
+    bike_photo = request.files['bike_photo']
+    safety_gear_photo = request.files['safety_gear_photo']
+    
+    # 자전거 사진 업로드
+    bike_photo_url, error = upload_file_to_ncp(bike_photo, "bike_logs/bike_photos")
+    if error:
+        return make_response({"error": f"자전거 사진 업로드 실패: {error}"}, 500)
+    
+    # 안전 장비 사진 업로드
+    safety_gear_photo_url, error = upload_file_to_ncp(safety_gear_photo, "bike_logs/safety_gear")
+    if error:
+        return make_response({"error": f"안전 장비 사진 업로드 실패: {error}"}, 500)
+    
+    # 데이터베이스에 기록 저장
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute("""
+            INSERT INTO bike_usage_logs 
+            (user_id, description, bike_photo_url, safety_gear_photo_url, 
+             verification_status, started_at) 
+            VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP) 
+            RETURNING id, user_id, description, bike_photo_url, safety_gear_photo_url, 
+                      verification_status, started_at, created_at
+        """, (user_id, description, bike_photo_url, safety_gear_photo_url, "pending"))
+        
+        log = cur.fetchone()
+    
+    return make_response(dict(log), 201)
+
+
+@bp.route("/users/bike-logs", methods=["GET"])
+@jwt_required
+def get_user_bike_logs():
+    """
+    사용자 자전거 활동 기록 조회
+    ---
+    tags:
+      - Bike Logs
+    summary: 사용자의 자전거 활동 기록 목록 조회
+    description: 현재 로그인한 사용자의 자전거 활동 기록들을 조회합니다.
+    security:
+      - JWT: []
+    parameters:
+      - in: query
+        name: status
+        type: string
+        required: false
+        description: 검증 상태 필터 (pending, verified, rejected)
+        enum: [pending, verified, rejected]
+      - in: query
+        name: limit
+        type: integer
+        required: false
+        description: 조회할 기록 개수 (기본값 20)
+        default: 20
+      - in: query
+        name: offset
+        type: integer
+        required: false
+        description: 건너뛸 기록 개수 (기본값 0)
+        default: 0
+    responses:
+      200:
+        description: 자전거 활동 기록 조회 성공
         schema:
           type: object
           properties:
-            error:
+            code:
+              type: integer
+              example: 200
+            message:
               type: string
-              example: "missing required fields"
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  description:
+                    type: string
+                    example: "한강 라이딩"
+                  bike_photo_url:
+                    type: string
+                    example: "https://kr.object.ncloudstorage.com/bucket/bike_logs/abc123.jpg"
+                  safety_gear_photo_url:
+                    type: string
+                    example: "https://kr.object.ncloudstorage.com/bucket/bike_logs/def456.jpg"
+                  verification_status:
+                    type: string
+                    example: "verified"
+                  points_awarded:
+                    type: integer
+                    example: 10
+                  admin_notes:
+                    type: string
+                    example: "좋은 활동입니다!"
+                  started_at:
+                    type: string
+                    example: "2024-01-01T09:00:00Z"
+                  verified_at:
+                    type: string
+                    example: "2024-01-01T10:00:00Z"
       401:
         description: 인증 실패
     """
     user_id = get_current_user_id()
-    data = request.get_json() or {}
-    goal_type = data.get("goal_type")  # distance, duration, frequency
-    target_value = data.get("target_value")
-    period_type = data.get("period_type")  # daily, weekly, monthly
-    start_date = data.get("start_date")
-    end_date = data.get("end_date")
-    
-    if not all([goal_type, target_value, period_type, start_date, end_date]):
-        return make_response({"error": "missing required fields"}, 400)
+    status = request.args.get('status')
+    limit = int(request.args.get('limit', 20))
+    offset = int(request.args.get('offset', 0))
     
     db = get_db()
     with db.cursor() as cur:
-        cur.execute("""
-            INSERT INTO cycling_goals 
-            (user_id, goal_type, target_value, period_type, start_date, end_date)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING *
-        """, (user_id, goal_type, target_value, period_type, start_date, end_date))
-        goal = cur.fetchone()
+        # WHERE 조건 구성
+        where_clause = "WHERE user_id = %s"
+        params = [user_id]
+        
+        if status:
+            where_clause += " AND verification_status = %s"
+            params.append(status)
+        
+        cur.execute(f"""
+            SELECT id, description, bike_photo_url, safety_gear_photo_url, 
+                   verification_status, points_awarded, admin_notes,
+                   started_at, verified_at, created_at
+            FROM bike_usage_logs 
+            {where_clause}
+            ORDER BY created_at DESC
+            LIMIT %s OFFSET %s
+        """, params + [limit, offset])
+        
+        logs = cur.fetchall()
     
-    return make_response(dict(goal), 201)
+    return make_response(logs)
 
 
-@bp.route("/users/achievements", methods=["GET"])
-@jwt_required
-def get_user_achievements():
+@bp.route("/admin/bike-logs", methods=["GET"])
+@admin_required
+def get_pending_bike_logs():
     """
-    사용자 업적 조회
+    관리자용 자전거 활동 기록 조회
     ---
     tags:
       - Bike Logs
-    summary: 사용자의 업적 조회
-    description: 현재 로그인한 사용자의 달성한 업적 목록을 조회합니다.
+    summary: 검증 대기 중인 자전거 활동 기록 조회 (관리자)
+    description: 관리자가 검증해야 할 자전거 활동 기록들을 조회합니다.
     security:
       - JWT: []
+      - AdminHeader: []
+    parameters:
+      - in: query
+        name: status
+        type: string
+        required: false
+        description: 검증 상태 필터 (기본값 pending)
+        enum: [pending, verified, rejected]
+        default: pending
+      - in: query
+        name: limit
+        type: integer
+        required: false
+        description: 조회할 기록 개수 (기본값 50)
+        default: 50
+      - in: query
+        name: offset
+        type: integer
+        required: false
+        description: 건너뛸 기록 개수 (기본값 0)
+        default: 0
     responses:
       200:
-        description: 업적 조회 성공
+        description: 자전거 활동 기록 조회 성공
         schema:
           type: object
           properties:
@@ -616,59 +362,98 @@ def get_user_achievements():
                   user_id:
                     type: integer
                     example: 1
-                  achievement_type:
+                  username:
                     type: string
-                    example: "distance_milestone"
-                  title:
-                    type: string
-                    example: "첫 번째 10km 달성"
+                    example: "user123"
                   description:
                     type: string
-                    example: "누적 자전거 이용 거리 10km를 달성했습니다"
-                  badge_url:
+                    example: "한강 라이딩"
+                  bike_photo_url:
                     type: string
-                    example: "/static/badges/10km.png"
-                  points_reward:
-                    type: integer
-                    example: 100
-                  exp_reward:
-                    type: integer
-                    example: 150
-                  achieved_at:
+                    example: "https://kr.object.ncloudstorage.com/bucket/bike_logs/abc123.jpg"
+                  safety_gear_photo_url:
                     type: string
-                    format: date-time
-                    example: "2024-01-15T10:30:00Z"
+                    example: "https://kr.object.ncloudstorage.com/bucket/bike_logs/def456.jpg"
+                  verification_status:
+                    type: string
+                    example: "pending"
+                  started_at:
+                    type: string
+                    example: "2024-01-01T09:00:00Z"
+                  created_at:
+                    type: string
+                    example: "2024-01-01T09:00:00Z"
       401:
         description: 인증 실패
+      403:
+        description: 관리자 권한 필요
     """
-    user_id = get_current_user_id()
+    status = request.args.get('status', 'pending')
+    limit = int(request.args.get('limit', 50))
+    offset = int(request.args.get('offset', 0))
+    
     db = get_db()
     with db.cursor() as cur:
         cur.execute("""
-            SELECT * FROM user_achievements 
-            WHERE user_id = %s 
-            ORDER BY achieved_at DESC
-        """, (user_id,))
-        achievements = cur.fetchall()
+            SELECT bl.id, bl.user_id, u.username, bl.description, 
+                   bl.bike_photo_url, bl.safety_gear_photo_url, 
+                   bl.verification_status, bl.points_awarded, bl.admin_notes,
+                   bl.started_at, bl.verified_at, bl.created_at
+            FROM bike_usage_logs bl
+            JOIN users u ON bl.user_id = u.id
+            WHERE bl.verification_status = %s
+            ORDER BY bl.created_at ASC
+            LIMIT %s OFFSET %s
+        """, (status, limit, offset))
+        
+        logs = cur.fetchall()
+    
+    return make_response(logs)
 
-    return make_response([dict(achievement) for achievement in achievements])
 
-
-@bp.route("/users/stats", methods=["GET"])
-@jwt_required
-def get_user_stats():
+@bp.route("/admin/bike-logs/<int:log_id>/verify", methods=["POST"])
+@admin_required
+def verify_bike_log(log_id):
     """
-    사용자 통계 조회
+    자전거 활동 기록 검증
     ---
     tags:
       - Bike Logs
-    summary: 사용자의 자전거 이용 통계 조회
-    description: 현재 로그인한 사용자의 총 이용 통계, 주간 통계, 목표 달성률 등을 조회합니다.
+    summary: 자전거 활동 기록 검증 및 포인트 지급 (관리자)
+    description: 관리자가 자전거 활동 기록을 검증하고 포인트를 지급합니다.
     security:
       - JWT: []
+      - AdminHeader: []
+    parameters:
+      - in: path
+        name: log_id
+        required: true
+        type: integer
+        description: 검증할 활동 기록 ID
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - status
+          properties:
+            status:
+              type: string
+              enum: [verified, rejected]
+              description: 검증 결과
+              example: "verified"
+            points:
+              type: integer
+              description: 지급할 포인트 (승인 시)
+              example: 10
+            admin_notes:
+              type: string
+              description: 관리자 메모
+              example: "안전 장비 착용 확인됨"
     responses:
       200:
-        description: 통계 조회 성공
+        description: 검증 완료
         schema:
           type: object
           properties:
@@ -681,92 +466,182 @@ def get_user_stats():
             data:
               type: object
               properties:
-                total_stats:
-                  type: object
-                  properties:
-                    total_rides:
-                      type: integer
-                      example: 25
-                    total_distance:
-                      type: number
-                      example: 127.5
-                    total_duration:
-                      type: integer
-                      example: 450
-                    avg_distance:
-                      type: number
-                      example: 5.1
-                weekly_stats:
-                  type: object
-                  properties:
-                    weekly_rides:
-                      type: integer
-                      example: 3
-                    weekly_distance:
-                      type: number
-                      example: 15.2
-                    weekly_duration:
-                      type: integer
-                      example: 65
-                goals_progress:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      goal_type:
-                        type: string
-                        example: "distance"
-                      target_value:
-                        type: number
-                        example: 50.0
-                      current_value:
-                        type: number
-                        example: 35.2
-                      progress_percent:
-                        type: number
-                        example: 70.4
+                id:
+                  type: integer
+                  example: 1
+                verification_status:
+                  type: string
+                  example: "verified"
+                points_awarded:
+                  type: integer
+                  example: 10
+                admin_notes:
+                  type: string
+                  example: "안전 장비 착용 확인됨"
+                verified_at:
+                  type: string
+                  example: "2024-01-01T10:00:00Z"
+      400:
+        description: 잘못된 요청
       401:
         description: 인증 실패
+      403:
+        description: 관리자 권한 필요
+      404:
+        description: 활동 기록을 찾을 수 없음
     """
-    user_id = get_current_user_id()
+    data = request.get_json() or {}
+    status = data.get("status")
+    points = data.get("points", 0)
+    admin_notes = data.get("admin_notes", "")
+    
+    if status not in ["verified", "rejected"]:
+        return make_response({"error": "status must be 'verified' or 'rejected'"}, 400)
+    
+    if status == "verified" and points <= 0:
+        return make_response({"error": "points must be greater than 0 for verified status"}, 400)
+    
+    admin_id = get_current_user_id()
+    
     db = get_db()
     with db.cursor() as cur:
-        # 총 이용 통계
+        # 활동 기록 존재 및 상태 확인
         cur.execute("""
-            SELECT 
-                COUNT(*) as total_rides,
-                COALESCE(SUM(distance), 0) as total_distance,
-                COALESCE(SUM(duration_minutes), 0) as total_duration,
-                COALESCE(AVG(distance), 0) as avg_distance
+            SELECT user_id, verification_status 
             FROM bike_usage_logs 
-            WHERE user_id = %s AND status = 'completed'
-        """, (user_id,))
-        stats = cur.fetchone()
+            WHERE id = %s
+        """, (log_id,))
         
-        # 이번 주 통계
+        log = cur.fetchone()
+        if not log:
+            return make_response({"error": "bike log not found"}, 404)
+        
+        if log["verification_status"] != "pending":
+            return make_response({"error": "bike log already processed"}, 400)
+        
+        user_id = log["user_id"]
+        
+        # 활동 기록 업데이트
         cur.execute("""
-            SELECT 
-                COUNT(*) as weekly_rides,
-                COALESCE(SUM(distance), 0) as weekly_distance,
-                COALESCE(SUM(duration_minutes), 0) as weekly_duration
+            UPDATE bike_usage_logs 
+            SET verification_status = %s, verified_by_admin_id = %s, 
+                admin_notes = %s, points_awarded = %s, verified_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING id, verification_status, points_awarded, admin_notes, verified_at
+        """, (status, admin_id, admin_notes, points, log_id))
+        
+        updated_log = cur.fetchone()
+        
+        # 승인된 경우 포인트 지급
+        if status == "verified" and points > 0:
+            # 사용자 포인트 업데이트
+            cur.execute("""
+                UPDATE users 
+                SET points = points + %s, experience_points = experience_points + %s
+                WHERE id = %s
+            """, (points, points // 2, user_id))  # 경험치는 포인트의 절반
+            
+            # 보상 기록
+            cur.execute("""
+                INSERT INTO rewards 
+                (user_id, source_type, source_id, points, experience_points, reward_reason, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (user_id, "bike_usage", log_id, points, points // 2, "자전거 활동 검증 완료", "completed"))
+    
+    return make_response(dict(updated_log))
+
+
+@bp.route("/users/bike-logs/<int:log_id>", methods=["GET"])
+@jwt_required
+def get_bike_log_detail(log_id):
+    """
+    자전거 활동 기록 상세 조회
+    ---
+    tags:
+      - Bike Logs
+    summary: 특정 자전거 활동 기록 상세 정보 조회
+    description: 특정 자전거 활동 기록의 상세 정보를 조회합니다.
+    security:
+      - JWT: []
+    parameters:
+      - in: path
+        name: log_id
+        required: true
+        type: integer
+        description: 조회할 활동 기록 ID
+    responses:
+      200:
+        description: 활동 기록 상세 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 1
+                user_id:
+                  type: integer
+                  example: 1
+                description:
+                  type: string
+                  example: "한강 라이딩"
+                bike_photo_url:
+                  type: string
+                  example: "https://kr.object.ncloudstorage.com/bucket/bike_logs/abc123.jpg"
+                safety_gear_photo_url:
+                  type: string
+                  example: "https://kr.object.ncloudstorage.com/bucket/bike_logs/def456.jpg"
+                verification_status:
+                  type: string
+                  example: "verified"
+                points_awarded:
+                  type: integer
+                  example: 10
+                admin_notes:
+                  type: string
+                  example: "안전 장비 착용 확인됨"
+                started_at:
+                  type: string
+                  example: "2024-01-01T09:00:00Z"
+                verified_at:
+                  type: string
+                  example: "2024-01-01T10:00:00Z"
+                created_at:
+                  type: string
+                  example: "2024-01-01T09:00:00Z"
+      401:
+        description: 인증 실패
+      403:
+        description: 접근 권한 없음
+      404:
+        description: 활동 기록을 찾을 수 없음
+    """
+    user_id = get_current_user_id()
+    
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute("""
+            SELECT id, user_id, description, bike_photo_url, safety_gear_photo_url,
+                   verification_status, verified_by_admin_id, admin_notes, points_awarded,
+                   started_at, verified_at, created_at
             FROM bike_usage_logs 
-            WHERE user_id = %s AND status = 'completed'
-              AND usage_time >= DATE_TRUNC('week', CURRENT_DATE)
-        """, (user_id,))
-        weekly_stats = cur.fetchone()
+            WHERE id = %s
+        """, (log_id,))
         
-        # 목표 달성률
-        cur.execute("""
-            SELECT goal_type, target_value, current_value,
-                   CASE WHEN target_value > 0 THEN (current_value / target_value * 100) ELSE 0 END as progress_percent
-            FROM cycling_goals 
-            WHERE user_id = %s AND status = 'active'
-              AND start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE
-        """, (user_id,))
-        goals_progress = cur.fetchall()
-
-    combined_stats = dict(stats)
-    combined_stats.update(dict(weekly_stats))
-    combined_stats["goals_progress"] = [dict(goal) for goal in goals_progress]
-
-    return make_response(combined_stats)
+        log = cur.fetchone()
+        if not log:
+            return make_response({"error": "bike log not found"}, 404)
+        
+        # 본인의 기록이 아닌 경우 접근 거부
+        if log["user_id"] != user_id:
+            return make_response({"error": "access denied"}, 403)
+    
+    return make_response(dict(log))

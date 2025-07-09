@@ -13,6 +13,7 @@ from .routes.community import bp as community_bp
 from .routes.news import bp as news_bp
 from .routes.quizzes import bp as quizzes_bp
 from .routes.users import bp as users_bp
+from .routes.storage import bp as storage_bp
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
 
@@ -143,6 +144,7 @@ def create_app(test_config=None):
     app.register_blueprint(users_bp)
     app.register_blueprint(bike_logs_bp)
     app.register_blueprint(community_bp)
+    app.register_blueprint(storage_bp)
     
     # Swagger 설정
     swagger_config = {
