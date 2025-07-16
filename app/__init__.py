@@ -52,6 +52,7 @@ def create_app(test_config=None):
                     "http://localhost:3000",
                     "http://127.0.0.1:3000",
                     "https://port-0-likebike-mc4iz1js1403f457.sel5.cloudtype.app",
+                    "https://like-bike-front.vercel.app",
                 ],
                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                 "allow_headers": ["Content-Type", "Authorization", "X-Admin"],
