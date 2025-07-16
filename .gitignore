@@ -172,3 +172,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+.vscode
+.idx
+.idx/**
+devserver.sh

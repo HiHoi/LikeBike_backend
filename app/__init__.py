@@ -14,6 +14,11 @@ from .routes.news import bp as news_bp
 from .routes.quizzes import bp as quizzes_bp
 from .routes.users import bp as users_bp
 from .routes.storage import bp as storage_bp
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
 
@@ -65,6 +70,13 @@ def create_app(test_config=None):
         app.config.update(test_config)
     elif os.environ.get("FLASK_ENV") == "production":
         # 프로덕션: 환경변수 필수
+        database_url = os.environ.get("DATABASE_URL")
+        if not database_url:
+            raise ValueError(
+                "DATABASE_URL environment variable is required in production"
+            )
+        app.config.from_mapping(DATABASE_URL=database_url)
+    elif os.environ.get("FLASK_ENV") == "firebase_studio":
         database_url = os.environ.get("DATABASE_URL")
         if not database_url:
             raise ValueError(
