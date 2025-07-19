@@ -27,7 +27,6 @@ async def fetch_kakao_tokens(code: str) -> dict:
         "redirect_uri": KAKAO_REDIRECT_URI,
         "code": code,
     }
-    print(data)
     async with aiohttp.ClientSession() as session:
         async with session.post(url, headers=headers, data=data) as resp:
             resp.raise_for_status()
@@ -37,6 +36,7 @@ async def fetch_kakao_user_info(access_token: str) -> dict:
     """Retrieve user info from Kakao API."""
     url = "https://kapi.kakao.com/v2/user/me"
     headers = {"Authorization": f"Bearer {access_token}"}
+    print(headers)
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
             resp.raise_for_status()
@@ -130,8 +130,8 @@ def register_user():
 
         kakao_user_info = asyncio.run(fetch_kakao_user_info(access_token))
 
-        kakao_id = str(kakao_info.get("id"))
-        kakao_account = kakao_info.get("kakao_account", {})
+        kakao_id = str(kakao_user_info.get("id"))
+        kakao_account = kakao_user_info.get("kakao_account", {})
         profile = kakao_account.get("profile", {})
         username = profile.get("nickname") or "user"
         email = kakao_account.get("email") or f"{kakao_id}@kakao"
