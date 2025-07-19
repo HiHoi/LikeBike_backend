@@ -14,8 +14,22 @@ from ..db import get_db
 
 bp = Blueprint("users", __name__)
 
+async def fetch_kakao_tokens(code: str) -> dict:
+    """Exchange authorization code for access and refresh tokens."""
+    url = "https://kauth.kakao.com/oauth/token"
+    headers = {"Content-Type": "application/x-www-form-urlencoded;charset=utf-8"}
+    data = {
+        "grant_type": "authorization_code",
+        "client_id": KAKAO_REST_API_KEY,
+        "redirect_uri": KAKAO_REDIRECT_URI,
+        "code": code,
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, data=data) as resp:
+            resp.raise_for_status()
+            return await resp.json()
 
-async def fetch_kakao_user_info(access_token: str) -> Dict[str, Any]:
+async def fetch_kakao_user_info(access_token: str) -> dict:
     """Retrieve user info from Kakao API."""
     url = "https://kapi.kakao.com/v2/user/me"
     headers = {"Authorization": f"Bearer {access_token}"}
@@ -32,8 +46,8 @@ def register_user():
     ---
     tags:
       - Users
-    summary: 카카오 토큰을 사용하여 사용자 등록 또는 로그인
-    description: 카카오 액세스 토큰을 사용하여 새 사용자를 등록하거나 기존 사용자로 로그인합니다.
+    summary: 카카오 Oauth를 사용하여 사용자 등록 또는 로그인
+    description: 카카오 Oauth를 사용하여 새 사용자를 등록합니다.
     parameters:
       - in: body
         name: body
@@ -41,12 +55,12 @@ def register_user():
         schema:
           type: object
           required:
-            - access_token
+            - code
           properties:
-            access_token:
+            code:
               type: string
-              description: 카카오 액세스 토큰
-              example: "kakao_access_token_example"
+              description: 카카오 액세스 코드
+              example: "kakao_oauth_code_example"
     responses:
       201:
         description: 사용자 등록/로그인 성공
@@ -99,60 +113,66 @@ def register_user():
                     type: string
                     example: "access_token required"
     """
-    data = request.get_json() or {}
-    access_token = data.get("access_token")
-    if not access_token:
-        return make_response({"error": "access_token required"}, 400)
+    code = request.args.get("code")
+    if not code:
+        return make_response({"error": "authorization code missing"}, 400)
 
     try:
-        kakao_info = asyncio.run(fetch_kakao_user_info(access_token))
-    except Exception:
-        return make_response({"error": "invalid kakao token"}, 400)
+        token_info = asyncio.run(fetch_kakao_tokens(code))
+        access_token = token_info.get("access_token")
+        if not access_token:
+             return make_response({"error": "failed to get kakao access token"}, 400)
 
-    kakao_id = str(kakao_info.get("id"))
-    kakao_account = kakao_info.get("kakao_account", {})
-    profile = kakao_account.get("profile", {})
-    username = profile.get("nickname") or "user"
-    email = kakao_account.get("email") or f"{kakao_id}@kakao"
-    profile_image_url = profile.get("profile_image_url") or profile.get("thumbnail_image_url")
+        kakao_user_info = asyncio.run(fetch_kakao_user_info(access_token))
 
-    db = get_db()
-    with db.cursor() as cur:
-        cur.execute(
-            "SELECT id FROM users WHERE kakao_id = %s",
-            (kakao_id,),
-        )
-        existing = cur.fetchone()
-        if existing:
-            user_id = existing["id"]
-            # 기존 사용자의 프로필 정보 업데이트 (프로필 이미지 포함)
+        kakao_id = str(kakao_info.get("id"))
+        kakao_account = kakao_info.get("kakao_account", {})
+        profile = kakao_account.get("profile", {})
+        username = profile.get("nickname") or "user"
+        email = kakao_account.get("email") or f"{kakao_id}@kakao"
+        profile_image_url = profile.get("profile_image_url") or profile.get("thumbnail_image_url")
+
+        db = get_db()
+        with db.cursor() as cur:
             cur.execute(
-                "UPDATE users SET username = %s, email = %s, profile_image_url = %s WHERE id = %s",
-                (username, email, profile_image_url, user_id)
+                "SELECT id FROM users WHERE kakao_id = %s",
+                (kakao_id,),
             )
-        else:
-            cur.execute(
-                "INSERT INTO users (kakao_id, username, email, profile_image_url) VALUES (%s, %s, %s, %s) RETURNING id",
-                (kakao_id, username, email, profile_image_url),
-            )
-            user_id = cur.fetchone()["id"]
+            existing = cur.fetchone()
+            if existing:
+                user_id = existing["id"]
+                # 기존 사용자의 프로필 정보 업데이트 (프로필 이미지 포함)
+                cur.execute(
+                    "UPDATE users SET username = %s, email = %s, profile_image_url = %s WHERE id = %s",
+                    (username, email, profile_image_url, user_id)
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO users (kakao_id, username, email, profile_image_url) VALUES (%s, %s, %s, %s) RETURNING id",
+                    (kakao_id, username, email, profile_image_url),
+                )
+                user_id = cur.fetchone()["id"]
+                
+                # 기본 설정 생성
+                cur.execute(
+                    "INSERT INTO user_settings (user_id) VALUES (%s)",
+                    (user_id,)
+                )
             
-            # 기본 설정 생성
-            cur.execute(
-                "INSERT INTO user_settings (user_id) VALUES (%s)",
-                (user_id,)
-            )
-        
-        # JWT 토큰 생성
-        jwt_token = generate_jwt_token(user_id, username, email)
-        
-    return make_response({
-        "id": user_id, 
-        "username": username, 
-        "email": email, 
-        "profile_image_url": profile_image_url,
-        "access_token": jwt_token
-    }, 201)
+            # JWT 토큰 생성
+            jwt_token = generate_jwt_token(user_id, username, email)
+            
+        return make_response({
+            "id": user_id, 
+            "username": username, 
+            "email": email, 
+            "profile_image_url": profile_image_url,
+            "access_token": jwt_token
+        }, 201)
+
+    except Exception as e:
+        # TODO: Log the error properly
+        return make_response({"error": f"kakao login failed: {str(e)}"}, 500)
 
 
 @bp.route("/users/profile", methods=["PUT"])
