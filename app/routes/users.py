@@ -35,7 +35,10 @@ async def fetch_kakao_tokens(code: str) -> dict:
 async def fetch_kakao_user_info(access_token: str) -> dict:
     """Retrieve user info from Kakao API."""
     url = "https://kapi.kakao.com/v2/user/me"
-    headers = {"Authorization": f"Bearer {access_token}"}
+    headers = {
+      "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+      "Authorization": f"Bearer {access_token}"
+      }
     print(headers)
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
