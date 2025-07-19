@@ -27,6 +27,7 @@ async def fetch_kakao_tokens(code: str) -> dict:
         "redirect_uri": KAKAO_REDIRECT_URI,
         "code": code,
     }
+    print(data)
     async with aiohttp.ClientSession() as session:
         async with session.post(url, headers=headers, data=data) as resp:
             resp.raise_for_status()
@@ -116,9 +117,7 @@ def register_user():
                     type: string
                     example: "access_token required"
     """
-    print(request)
     data = request.get_json() or {}
-    print(data)
     code = data.get("code")
     if not code:
         return make_response({"error": "authorization code missing"}, 400)
