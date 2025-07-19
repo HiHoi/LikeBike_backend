@@ -71,6 +71,7 @@ CREATE TABLE quizzes (
     question TEXT NOT NULL,
     correct_answer TEXT NOT NULL,
     answers TEXT[], -- PostgreSQL array for multiple choice answers
+    hint_link VARCHAR(512),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

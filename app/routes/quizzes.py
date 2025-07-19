@@ -49,6 +49,7 @@ def create_quiz():
             - question
             - correct_answer
             - answers
+            - hint_link
           properties:
             question:
               type: string
@@ -58,6 +59,10 @@ def create_quiz():
               type: string
               description: 정답
               example: "헬멧"
+            hint_link:
+              type: string
+              description: 힌트에 대한 사이트 링크
+              example: "https://example.com/hint"
             answers:
               type: array
               description: 선택지 배열 (정답 포함)
@@ -90,6 +95,9 @@ def create_quiz():
                   correct_answer:
                     type: string
                     example: "헬멧"
+                  hint_link:
+                    type: string
+                    example: "https://example.com/hint"
                   answers:
                     type: array
                     items:
@@ -106,19 +114,20 @@ def create_quiz():
     question = data.get("question")
     correct_answer = data.get("correct_answer")
     answers = data.get("answers", [])  # 선택지 배열
+    hint_link = data.get("hint_link")
     if not question or not correct_answer:
         return make_response({"error": "question and correct_answer required"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO quizzes (question, correct_answer, answers) VALUES (%s, %s, %s) RETURNING id",
-            (question, correct_answer, answers),
+            "INSERT INTO quizzes (question, correct_answer, answers, hint_link) VALUES (%s, %s, %s, %s) RETURNING id",
+            (question, correct_answer, answers, hint_link),
         )
         quiz_id = cur.fetchone()["id"]
 
     return make_response(
-        {"id": quiz_id, "question": question, "correct_answer": correct_answer, "answers": answers},
+        {"id": quiz_id, "question": question, "hint_link": hint_link, "correct_answer": correct_answer, "answers": answers},
         201,
     )
 
@@ -152,6 +161,7 @@ def update_quiz(quiz_id):
             - question
             - correct_answer
             - answers
+            - hint_link
           properties:
             question:
               type: string
@@ -167,6 +177,10 @@ def update_quiz(quiz_id):
               items:
                 type: string
               example: ["모자", "선글라스", "헬멧", "장갑"]
+            hint_link:
+              type: string
+              description: 힌트에 대한 사이트 링크
+              example: "https://example.com/hint"
     responses:
       200:
         description: 퀴즈 수정 성공
@@ -198,6 +212,9 @@ def update_quiz(quiz_id):
                     items:
                       type: string
                     example: ["모자", "선글라스", "헬멧", "장갑"]
+                  hint_link:
+                    type: string
+                    example: "https://example.com/hint"
       400:
         description: 잘못된 요청
       401:
@@ -211,14 +228,15 @@ def update_quiz(quiz_id):
     question = data.get("question")
     correct_answer = data.get("correct_answer")
     answers = data.get("answers", [])
+    hint_link = data.get("hint_link")
     if not question or not correct_answer:
         return make_response({"error": "question and correct_answer required"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "UPDATE quizzes SET question = %s, correct_answer = %s, answers = %s WHERE id = %s RETURNING id, question, correct_answer, answers",
-            (question, correct_answer, answers, quiz_id),
+            "UPDATE quizzes SET question = %s, correct_answer = %s, answers = %s, hint_link = %s WHERE id = %s RETURNING id, question, correct_answer, answers, hint_link",
+            (question, correct_answer, answers, hint_link, quiz_id),
         )
         result = cur.fetchone()
         if not result:
@@ -307,12 +325,20 @@ def list_quizzes():
                   question:
                     type: string
                     example: "자전거 안전을 위해 반드시 착용해야 하는 것은?"
+                  answers:
+                    type: array
+                    items:
+                      type: string
+                    example: ["모자", "선글라스", "헬멧", "장갑"]
+                  hint_link:
+                    type: string
+                    example: "https://example.com/hint"
       401:
         description: 인증 실패
     """
     db = get_db()
     with db.cursor() as cur:
-        cur.execute("SELECT id, question FROM quizzes")
+        cur.execute("SELECT id, question, answers, hint_link FROM quizzes")
         quizzes = cur.fetchall()
 
     return make_response(quizzes)

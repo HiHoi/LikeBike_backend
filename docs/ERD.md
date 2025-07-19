@@ -47,6 +47,7 @@ erDiagram
         string question
         string correct_answer
         string[] answers
+        varchar hint_link
         timestamp created_at
     }
 
