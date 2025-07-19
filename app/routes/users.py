@@ -14,6 +14,9 @@ from ..db import get_db
 
 bp = Blueprint("users", __name__)
 
+KAKAO_REST_API_KEY = os.environ.get("KAKAO_REST_API_KEY")
+KAKAO_REDIRECT_URI = os.environ.get("KAKAO_REDIRECT_URI")
+
 async def fetch_kakao_tokens(code: str) -> dict:
     """Exchange authorization code for access and refresh tokens."""
     url = "https://kauth.kakao.com/oauth/token"
