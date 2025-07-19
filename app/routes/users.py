@@ -113,7 +113,8 @@ def register_user():
                     type: string
                     example: "access_token required"
     """
-    code = request.args.get("code")
+    data = request.get_json() or {}
+    code = data.get("code")
     if not code:
         return make_response({"error": "authorization code missing"}, 400)
 
