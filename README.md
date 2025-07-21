@@ -39,6 +39,19 @@ python run.py
 
 Visit `http://localhost:3000/test` and you should see `hello world`.
 
+## Environment Variables
+
+Set the following variables (e.g. in a `.env` file) before running the server:
+
+- `DATABASE_URL` or `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
+- `JWT_SECRET_KEY`
+- `KAKAO_REST_API_KEY` / `KAKAO_REDIRECT_URI`
+- `CLOVA_API_KEY`
+- `NCP_ACCESS_KEY` / `NCP_SECRET_KEY` / `NCP_BUCKET_NAME`
+- `NCP_REGION` (default `kr-standard`) and `NCP_ENDPOINT` (default `https://kr.object.ncloudstorage.com`)
+- `PORT` (defaults to `3000`)
+
+
 ## API Documentation
 
 This project includes interactive API documentation powered by Swagger UI:
@@ -82,5 +95,16 @@ quizzes, bike usage logs, news, user routes and reward tracking. See
 ## Running Tests
 
 ```
-pytest
+pytest -q
+```
+
+## Linting
+
+Run code style and static analysis tools:
+
+```
+black .
+isort .
+flake8
+mypy --strict
 ```
