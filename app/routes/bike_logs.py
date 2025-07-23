@@ -184,15 +184,22 @@ def create_bike_log():
     # 데이터베이스에 기록 저장
     db = get_db()
     with db.cursor() as cur:
-        cur.execute("""
-            INSERT INTO bike_usage_logs 
-            (user_id, description, bike_photo_url, safety_gear_photo_url, 
-             verification_status, started_at) 
-            VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP) 
-            RETURNING id, user_id, description, bike_photo_url, safety_gear_photo_url, 
+        cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+        if not cur.fetchone():
+            return make_response({"error": "user not found"}, 404)
+
+        cur.execute(
+            """
+            INSERT INTO bike_usage_logs
+            (user_id, description, bike_photo_url, safety_gear_photo_url,
+             verification_status, started_at)
+            VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            RETURNING id, user_id, description, bike_photo_url, safety_gear_photo_url,
                       verification_status, started_at, created_at
-        """, (user_id, description, bike_photo_url, safety_gear_photo_url, "pending"))
-        
+        """,
+            (user_id, description, bike_photo_url, safety_gear_photo_url, "pending"),
+        )
+
         log = cur.fetchone()
     
     return make_response(dict(log), 201)
