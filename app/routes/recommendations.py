@@ -124,6 +124,52 @@ def list_course_recommendations():
     return make_response([dict(row) for row in rows])
 
 
+@bp.route("/users/course-recommendations/today/count", methods=["GET"])
+@jwt_required
+def today_course_recommendation_count():
+    """오늘의 코스 추천 생성 횟수 조회
+    ---
+    tags:
+      - Course Recommendations
+    summary: 사용자가 오늘 생성한 코스 추천 횟수 조회
+    security:
+      - JWT: []
+    responses:
+      200:
+        description: 생성 횟수 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    example: 1
+      401:
+        description: 인증 실패
+    """
+    user_id = get_current_user_id()
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM course_recommendations "
+            "WHERE user_id = %s AND created_at::date = CURRENT_DATE",
+            (user_id,),
+        )
+        count = cur.fetchone()[0]
+
+    return make_response({"count": count})
+
+
 @bp.route("/admin/course-recommendations/<int:rec_id>/verify", methods=["POST"])
 @admin_required
 def verify_course_recommendation(rec_id: int):
