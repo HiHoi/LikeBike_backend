@@ -5,8 +5,7 @@ import pytest
 
 from app import create_app
 from app.db import get_db
-from tests.test_helpers import (get_admin_headers, get_auth_headers,
-                                get_test_jwt_token)
+from tests.test_helpers import get_admin_headers, get_auth_headers, get_test_jwt_token
 
 
 @pytest.fixture
@@ -535,3 +534,38 @@ def test_daily_bike_log_limit(mock_upload, client, test_user):
     )
     assert res.status_code == 400
     assert "daily bike log limit" in res.get_json()["data"][0]["error"]
+
+
+@patch("app.routes.bike_logs.upload_file_to_ncp")
+def test_get_today_bike_log_count(mock_upload, client, test_user):
+    mock_upload.side_effect = [
+        ("https://test.com/bike.jpg", None),
+        ("https://test.com/safety.jpg", None),
+    ]
+
+    token = get_test_jwt_token(
+        test_user, f"user_{test_user}", f"user{test_user}@example.com"
+    )
+    headers = get_auth_headers(token)
+
+    # 처음 조회 시 0 반환
+    res = client.get("/users/bike-logs/today/count", headers=headers)
+    assert res.status_code == 200
+    assert res.get_json()["data"][0]["count"] == 0
+
+    bike_photo, _ = create_fake_image()
+    safety_photo, _ = create_fake_image()
+    client.post(
+        "/users/bike-logs",
+        data={
+            "description": "라이딩",
+            "bike_photo": (bike_photo, "bike.jpg"),
+            "safety_gear_photo": (safety_photo, "safety.jpg"),
+        },
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+
+    res = client.get("/users/bike-logs/today/count", headers=headers)
+    assert res.status_code == 200
+    assert res.get_json()["data"][0]["count"] == 1
