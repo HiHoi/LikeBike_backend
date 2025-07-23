@@ -5,7 +5,8 @@ import pytest
 
 from app import create_app
 from app.db import get_db
-from tests.test_helpers import get_admin_headers, get_auth_headers, get_test_jwt_token
+from tests.test_helpers import (get_admin_headers, get_auth_headers,
+                                get_test_jwt_token)
 
 
 @pytest.fixture
@@ -123,3 +124,40 @@ def test_verify_recommendation(mock_upload, client, test_user, admin_user):
     data = res.get_json()["data"][0]
     assert data["status"] == "approved"
     assert data["points_awarded"] == 5
+
+
+@patch("app.routes.recommendations.upload_file_to_ncp")
+def test_daily_recommendation_limit(mock_upload, client, test_user):
+    mock_upload.return_value = ("https://test.com/photo.jpg", None)
+    token = get_test_jwt_token(
+        test_user, f"user_{test_user}", f"user{test_user}@example.com"
+    )
+    headers = get_auth_headers(token)
+
+    for i in range(2):
+        img, _ = create_fake_image()
+        res = client.post(
+            "/users/course-recommendations",
+            data={
+                "location_name": f"코스{i}",
+                "review": "굿",
+                "photo": (img, f"p{i}.jpg"),
+            },
+            headers=headers,
+            content_type="multipart/form-data",
+        )
+        assert res.status_code == 201
+
+    img, _ = create_fake_image()
+    res = client.post(
+        "/users/course-recommendations",
+        data={
+            "location_name": "코스3",
+            "review": "굿",
+            "photo": (img, "p3.jpg"),
+        },
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+    assert res.status_code == 400
+    assert "daily course recommendation limit" in res.get_json()["data"][0]["error"]

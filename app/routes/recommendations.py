@@ -17,7 +17,9 @@ def create_course_recommendation():
     tags:
       - Course Recommendations
     summary: 새로운 코스 추천 등록
-    description: 코스 위치 이름과 후기를 입력하고 사진을 업로드하여 코스를 추천합니다.
+    description: |
+      코스 위치 이름과 후기를 입력하고 사진을 업로드하여 코스를 추천합니다.
+      코스 추천은 하루 두 번까지만 등록할 수 있습니다.
     security:
       - JWT: []
     consumes:
@@ -56,12 +58,24 @@ def create_course_recommendation():
     if "photo" not in request.files:
         return make_response({"error": "photo required"}, 400)
 
+    # 하루 2회 제한
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM course_recommendations"
+            " WHERE user_id = %s AND created_at::date = CURRENT_DATE",
+            (user_id,),
+        )
+        if cur.fetchone()[0] >= 2:
+            return make_response(
+                {"error": "daily course recommendation limit reached"}, 400
+            )
+
     photo = request.files["photo"]
     photo_url, error = upload_file_to_ncp(photo, "course_recommendations")
     if error:
         return make_response({"error": f"photo upload failed: {error}"}, 500)
 
-    db = get_db()
     with db.cursor() as cur:
         cur.execute(
             """

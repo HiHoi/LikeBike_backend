@@ -1,14 +1,14 @@
 import os
 import uuid
-from werkzeug.utils import secure_filename
-from flask import Blueprint, request
+
 import boto3
 from botocore.exceptions import ClientError
-
-from ..utils.responses import make_response
-from ..utils.auth import jwt_required, admin_required, get_current_user_id
+from flask import Blueprint, request
+from werkzeug.utils import secure_filename
 
 from ..db import get_db
+from ..utils.auth import admin_required, get_current_user_id, jwt_required
+from ..utils.responses import make_response
 
 bp = Blueprint("bike_logs", __name__)
 
@@ -20,64 +20,68 @@ NCP_ENDPOINT = os.environ.get("NCP_ENDPOINT", "https://kr.object.ncloudstorage.c
 NCP_BUCKET_NAME = os.environ.get("NCP_BUCKET_NAME")
 
 # S3 클라이언트 생성 (NCP Object Storage는 S3 호환)
-s3_client = boto3.client(
-    's3',
-    aws_access_key_id=NCP_ACCESS_KEY,
-    aws_secret_access_key=NCP_SECRET_KEY,
-    region_name=NCP_REGION,
-    endpoint_url=NCP_ENDPOINT
-) if all([NCP_ACCESS_KEY, NCP_SECRET_KEY, NCP_BUCKET_NAME]) else None
+s3_client = (
+    boto3.client(
+        "s3",
+        aws_access_key_id=NCP_ACCESS_KEY,
+        aws_secret_access_key=NCP_SECRET_KEY,
+        region_name=NCP_REGION,
+        endpoint_url=NCP_ENDPOINT,
+    )
+    if all([NCP_ACCESS_KEY, NCP_SECRET_KEY, NCP_BUCKET_NAME])
+    else None
+)
 
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "bmp", "webp"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 def allowed_file(filename):
     """허용된 파일 확장자인지 확인"""
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 def upload_file_to_ncp(file, folder_name="bike_logs"):
     """NCP Object Storage에 파일 업로드"""
     if not s3_client:
         return None, "NCP Object Storage 설정이 완료되지 않았습니다"
-        
-    if not file or file.filename == '':
+
+    if not file or file.filename == "":
         return None, "파일이 선택되지 않았습니다"
-    
+
     if not allowed_file(file.filename):
-        return None, f"허용되지 않는 파일 형식입니다. 허용: {', '.join(ALLOWED_EXTENSIONS)}"
-    
+        return (
+            None,
+            f"허용되지 않는 파일 형식입니다. 허용: {', '.join(ALLOWED_EXTENSIONS)}",
+        )
+
     # 파일 크기 체크
     file.seek(0, 2)  # 파일 끝으로 이동
     file_size = file.tell()
     file.seek(0)  # 파일 처음으로 되돌아가기
-    
+
     if file_size > MAX_FILE_SIZE:
         return None, f"파일 크기가 너무 큽니다. 최대 {MAX_FILE_SIZE // (1024*1024)}MB"
-    
+
     # 안전한 파일명 생성
     filename = secure_filename(file.filename)
-    file_extension = filename.rsplit('.', 1)[1].lower()
+    file_extension = filename.rsplit(".", 1)[1].lower()
     unique_filename = f"{uuid.uuid4().hex}.{file_extension}"
     object_key = f"{folder_name}/{unique_filename}"
-    
+
     try:
         # NCP Object Storage에 업로드
         s3_client.upload_fileobj(
             file,
             NCP_BUCKET_NAME,
             object_key,
-            ExtraArgs={
-                'ContentType': file.content_type or 'application/octet-stream'
-            }
+            ExtraArgs={"ContentType": file.content_type or "application/octet-stream"},
         )
-        
+
         # 업로드된 파일의 URL 생성
         file_url = f"{NCP_ENDPOINT}/{NCP_BUCKET_NAME}/{object_key}"
         return file_url, None
-        
+
     except ClientError as e:
         return None, f"파일 업로드 실패: {str(e)}"
     except Exception as e:
@@ -93,7 +97,9 @@ def create_bike_log():
     tags:
       - Bike Logs
     summary: 자전거 활동 시작 기록 및 사진 업로드
-    description: 자전거 활동을 시작하고 자전거 사진과 안전 장비 사진을 업로드합니다.
+    description: |
+      자전거 활동을 시작하고 자전거 사진과 안전 장비 사진을 업로드합니다.
+      사용자는 하루 한 번만 활동 인증을 등록할 수 있습니다.
     security:
       - JWT: []
     consumes:
@@ -158,31 +164,45 @@ def create_bike_log():
         description: 파일 업로드 실패
     """
     user_id = get_current_user_id()
-    
+
     # 폼 데이터에서 값 가져오기
     description = request.form.get("description")
     if not description:
         return make_response({"error": "description required"}, 400)
-    
+
     # 파일 확인
-    if 'bike_photo' not in request.files or 'safety_gear_photo' not in request.files:
-        return make_response({"error": "bike_photo and safety_gear_photo required"}, 400)
-    
-    bike_photo = request.files['bike_photo']
-    safety_gear_photo = request.files['safety_gear_photo']
-    
+    if "bike_photo" not in request.files or "safety_gear_photo" not in request.files:
+        return make_response(
+            {"error": "bike_photo and safety_gear_photo required"}, 400
+        )
+
+    # 하루 한 번만 인증 가능
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM bike_usage_logs"
+            " WHERE user_id = %s AND created_at::date = CURRENT_DATE",
+            (user_id,),
+        )
+        if cur.fetchone()[0] >= 1:
+            return make_response({"error": "daily bike log limit reached"}, 400)
+
+    bike_photo = request.files["bike_photo"]
+    safety_gear_photo = request.files["safety_gear_photo"]
+
     # 자전거 사진 업로드
     bike_photo_url, error = upload_file_to_ncp(bike_photo, "bike_logs/bike_photos")
     if error:
         return make_response({"error": f"자전거 사진 업로드 실패: {error}"}, 500)
-    
+
     # 안전 장비 사진 업로드
-    safety_gear_photo_url, error = upload_file_to_ncp(safety_gear_photo, "bike_logs/safety_gear")
+    safety_gear_photo_url, error = upload_file_to_ncp(
+        safety_gear_photo, "bike_logs/safety_gear"
+    )
     if error:
         return make_response({"error": f"안전 장비 사진 업로드 실패: {error}"}, 500)
-    
+
     # 데이터베이스에 기록 저장
-    db = get_db()
     with db.cursor() as cur:
         cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
         if not cur.fetchone():
@@ -201,7 +221,7 @@ def create_bike_log():
         )
 
         log = cur.fetchone()
-    
+
     return make_response(dict(log), 201)
 
 
@@ -284,21 +304,22 @@ def get_user_bike_logs():
         description: 인증 실패
     """
     user_id = get_current_user_id()
-    status = request.args.get('status')
-    limit = int(request.args.get('limit', 20))
-    offset = int(request.args.get('offset', 0))
-    
+    status = request.args.get("status")
+    limit = int(request.args.get("limit", 20))
+    offset = int(request.args.get("offset", 0))
+
     db = get_db()
     with db.cursor() as cur:
         # WHERE 조건 구성
         where_clause = "WHERE user_id = %s"
         params = [user_id]
-        
+
         if status:
             where_clause += " AND verification_status = %s"
             params.append(status)
-        
-        cur.execute(f"""
+
+        cur.execute(
+            f"""
             SELECT id, description, bike_photo_url, safety_gear_photo_url, 
                    verification_status, points_awarded, admin_notes,
                    started_at, verified_at, created_at
@@ -306,10 +327,12 @@ def get_user_bike_logs():
             {where_clause}
             ORDER BY created_at DESC
             LIMIT %s OFFSET %s
-        """, params + [limit, offset])
-        
+        """,
+            params + [limit, offset],
+        )
+
         logs = cur.fetchall()
-    
+
     return make_response(logs)
 
 
@@ -395,13 +418,14 @@ def get_pending_bike_logs():
       403:
         description: 관리자 권한 필요
     """
-    status = request.args.get('status', 'pending')
-    limit = int(request.args.get('limit', 50))
-    offset = int(request.args.get('offset', 0))
-    
+    status = request.args.get("status", "pending")
+    limit = int(request.args.get("limit", 50))
+    offset = int(request.args.get("offset", 0))
+
     db = get_db()
     with db.cursor() as cur:
-        cur.execute("""
+        cur.execute(
+            """
             SELECT bl.id, bl.user_id, u.username, bl.description, 
                    bl.bike_photo_url, bl.safety_gear_photo_url, 
                    bl.verification_status, bl.points_awarded, bl.admin_notes,
@@ -411,10 +435,12 @@ def get_pending_bike_logs():
             WHERE bl.verification_status = %s
             ORDER BY bl.created_at ASC
             LIMIT %s OFFSET %s
-        """, (status, limit, offset))
-        
+        """,
+            (status, limit, offset),
+        )
+
         logs = cur.fetchall()
-    
+
     return make_response(logs)
 
 
@@ -501,60 +527,82 @@ def verify_bike_log(log_id):
     status = data.get("status")
     points = data.get("points", 0)
     admin_notes = data.get("admin_notes", "")
-    
+
     if status not in ["verified", "rejected"]:
         return make_response({"error": "status must be 'verified' or 'rejected'"}, 400)
-    
+
     if status == "verified" and points <= 0:
-        return make_response({"error": "points must be greater than 0 for verified status"}, 400)
-    
+        return make_response(
+            {"error": "points must be greater than 0 for verified status"}, 400
+        )
+
     admin_id = get_current_user_id()
-    
+
     db = get_db()
     with db.cursor() as cur:
         # 활동 기록 존재 및 상태 확인
-        cur.execute("""
+        cur.execute(
+            """
             SELECT user_id, verification_status 
             FROM bike_usage_logs 
             WHERE id = %s
-        """, (log_id,))
-        
+        """,
+            (log_id,),
+        )
+
         log = cur.fetchone()
         if not log:
             return make_response({"error": "bike log not found"}, 404)
-        
+
         if log["verification_status"] != "pending":
             return make_response({"error": "bike log already processed"}, 400)
-        
+
         user_id = log["user_id"]
-        
+
         # 활동 기록 업데이트
-        cur.execute("""
+        cur.execute(
+            """
             UPDATE bike_usage_logs 
             SET verification_status = %s, verified_by_admin_id = %s, 
                 admin_notes = %s, points_awarded = %s, verified_at = CURRENT_TIMESTAMP
             WHERE id = %s
             RETURNING id, verification_status, points_awarded, admin_notes, verified_at
-        """, (status, admin_id, admin_notes, points, log_id))
-        
+        """,
+            (status, admin_id, admin_notes, points, log_id),
+        )
+
         updated_log = cur.fetchone()
-        
+
         # 승인된 경우 포인트 지급
         if status == "verified" and points > 0:
             # 사용자 포인트 업데이트
-            cur.execute("""
+            cur.execute(
+                """
                 UPDATE users 
                 SET points = points + %s, experience_points = experience_points + %s
                 WHERE id = %s
-            """, (points, points // 2, user_id))  # 경험치는 포인트의 절반
-            
+            """,
+                (points, points // 2, user_id),
+            )  # 경험치는 포인트의 절반
+
             # 보상 기록
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO rewards 
                 (user_id, source_type, source_id, points, experience_points, reward_reason, status)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (user_id, "bike_usage", log_id, points, points // 2, "자전거 활동 검증 완료", "completed"))
-    
+            """,
+                (
+                    user_id,
+                    "bike_usage",
+                    log_id,
+                    points,
+                    points // 2,
+                    "자전거 활동 검증 완료",
+                    "completed",
+                ),
+            )
+
     return make_response(dict(updated_log))
 
 
@@ -632,23 +680,26 @@ def get_bike_log_detail(log_id):
         description: 활동 기록을 찾을 수 없음
     """
     user_id = get_current_user_id()
-    
+
     db = get_db()
     with db.cursor() as cur:
-        cur.execute("""
+        cur.execute(
+            """
             SELECT id, user_id, description, bike_photo_url, safety_gear_photo_url,
                    verification_status, verified_by_admin_id, admin_notes, points_awarded,
                    started_at, verified_at, created_at
             FROM bike_usage_logs 
             WHERE id = %s
-        """, (log_id,))
-        
+        """,
+            (log_id,),
+        )
+
         log = cur.fetchone()
         if not log:
             return make_response({"error": "bike log not found"}, 404)
-        
+
         # 본인의 기록이 아닌 경우 접근 거부
         if log["user_id"] != user_id:
             return make_response({"error": "access denied"}, 403)
-    
+
     return make_response(dict(log))
