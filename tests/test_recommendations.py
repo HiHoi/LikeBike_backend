@@ -127,6 +127,42 @@ def test_verify_recommendation(mock_upload, client, test_user, admin_user):
 
 
 @patch("app.routes.recommendations.upload_file_to_ncp")
+def test_daily_recommendation_limit(mock_upload, client, test_user):
+    mock_upload.return_value = ("https://test.com/photo.jpg", None)
+    token = get_test_jwt_token(
+        test_user, f"user_{test_user}", f"user{test_user}@example.com"
+    )
+    headers = get_auth_headers(token)
+
+    for i in range(2):
+        img, _ = create_fake_image()
+        res = client.post(
+            "/users/course-recommendations",
+            data={
+                "location_name": f"코스{i}",
+                "review": "굿",
+                "photo": (img, f"p{i}.jpg"),
+            },
+            headers=headers,
+            content_type="multipart/form-data",
+        )
+        assert res.status_code == 201
+
+    img, _ = create_fake_image()
+    res = client.post(
+        "/users/course-recommendations",
+        data={
+            "location_name": "코스3",
+            "review": "굿",
+            "photo": (img, "p3.jpg"),
+        },
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+    assert res.status_code == 400
+    assert "daily course recommendation limit" in res.get_json()["data"][0]["error"]
+
+@patch("app.routes.recommendations.upload_file_to_ncp")
 def test_admin_list_all_recommendations(mock_upload, client, test_user, admin_user):
     """관리자가 모든 추천 코스를 조회할 수 있는지 확인"""
     mock_upload.return_value = ("https://test.com/photo.jpg", None)
@@ -166,3 +202,4 @@ def test_admin_list_requires_privileges(client, test_user):
 
     res = client.get("/admin/course-recommendations", headers=headers)
     assert res.status_code in (401, 403)
+
