@@ -2,8 +2,24 @@ import logging
 import os
 import time
 
-from dotenv import load_dotenv
-from flasgger import Swagger
+try:  # python-dotenv may not be installed in some test envs
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover - fallback when dependency missing
+
+    def load_dotenv():
+        """Fallback no-op when python-dotenv is unavailable."""
+        pass
+
+
+try:
+    from flasgger import Swagger
+except Exception:  # pragma: no cover - fallback when flasgger is missing
+
+    class Swagger:  # type: ignore[override]
+        def __init__(self, *_, **__):
+            pass
+
+
 from flask import Flask, g, request
 from flask_cors import CORS
 
@@ -14,9 +30,9 @@ from .routes.community import bp as community_bp
 from .routes.news import bp as news_bp
 from .routes.quizzes import bp as quizzes_bp
 from .routes.recommendations import bp as recommendations_bp
+from .routes.rewards import bp as rewards_bp
 from .routes.storage import bp as storage_bp
 from .routes.users import bp as users_bp
-from .routes.rewards import bp as rewards_bp
 
 load_dotenv()
 

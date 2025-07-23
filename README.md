@@ -73,6 +73,12 @@ Swagger UI를 통해 모든 API를 손쉽게 테스트할 수 있습니다.
 
 관리자 엔드포인트 `/admin/quizzes/generate`에 `prompt` 값을 담아 POST 요청하면 Clova X를 이용해 퀴즈를 생성합니다. `CLOVA_API_KEY`가 설정되어 있어야 합니다.
 
+### 퀴즈 관련 변경 사항
+
+- 퀴즈 생성 시 `display_date` 필드를 사용해 문제를 노출할 날짜를 지정합니다.
+- `/quizzes` 목록 조회 응답에 `display_date`가 포함됩니다.
+- `/quizzes/today/status` 엔드포인트로 사용자가 오늘 퀴즈를 풀었는지 확인할 수 있습니다.
+
 ## 데이터베이스 스키마
 
 `schema.sql` 파일에 PostgreSQL 스키마가 정의되어 있으며, 사용자, 퀴즈, 뉴스, 자전거 기록, 커뮤니티 게시글 등 여러 테이블을 포함합니다. 자세한 테이블 구조는 `docs/ERD.md`에서 확인할 수 있습니다.

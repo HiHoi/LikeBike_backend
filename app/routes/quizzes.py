@@ -1,13 +1,13 @@
 import asyncio
 import os
+from datetime import date
 
 import aiohttp
 from flask import Blueprint, request
 
-from ..utils.responses import make_response
-from ..utils.auth import jwt_required, admin_required, get_current_user_id
-
 from ..db import get_db
+from ..utils.auth import admin_required, get_current_user_id, jwt_required
+from ..utils.responses import make_response
 
 bp = Blueprint("quizzes", __name__)
 
@@ -50,6 +50,7 @@ def create_quiz():
             - correct_answer
             - answers
             - hint_link
+            - display_date
           properties:
             question:
               type: string
@@ -69,6 +70,11 @@ def create_quiz():
               items:
                 type: string
               example: ["모자", "선글라스", "헬멧", "장갑"]
+            display_date:
+              type: string
+              format: date
+              description: 퀴즈가 노출될 날짜
+              example: "2024-01-01"
     responses:
       201:
         description: 퀴즈 생성 성공
@@ -103,6 +109,10 @@ def create_quiz():
                     items:
                       type: string
                     example: ["모자", "선글라스", "헬멧", "장갑"]
+                  display_date:
+                    type: string
+                    format: date
+                    example: "2024-01-01"
       400:
         description: 잘못된 요청
       401:
@@ -115,19 +125,27 @@ def create_quiz():
     correct_answer = data.get("correct_answer")
     answers = data.get("answers", [])  # 선택지 배열
     hint_link = data.get("hint_link")
+    display_date = data.get("display_date") or date.today()
     if not question or not correct_answer:
         return make_response({"error": "question and correct_answer required"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO quizzes (question, correct_answer, answers, hint_link) VALUES (%s, %s, %s, %s) RETURNING id",
-            (question, correct_answer, answers, hint_link),
+            "INSERT INTO quizzes (question, correct_answer, answers, hint_link, display_date) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (question, correct_answer, answers, hint_link, display_date),
         )
         quiz_id = cur.fetchone()["id"]
 
     return make_response(
-        {"id": quiz_id, "question": question, "hint_link": hint_link, "correct_answer": correct_answer, "answers": answers},
+        {
+            "id": quiz_id,
+            "question": question,
+            "hint_link": hint_link,
+            "correct_answer": correct_answer,
+            "answers": answers,
+            "display_date": display_date.isoformat(),
+        },
         201,
     )
 
@@ -215,6 +233,10 @@ def update_quiz(quiz_id):
                   hint_link:
                     type: string
                     example: "https://example.com/hint"
+                  display_date:
+                    type: string
+                    format: date
+                    example: "2024-01-01"
       400:
         description: 잘못된 요청
       401:
@@ -338,10 +360,68 @@ def list_quizzes():
     """
     db = get_db()
     with db.cursor() as cur:
-        cur.execute("SELECT id, question, answers, hint_link FROM quizzes")
+        cur.execute(
+            "SELECT id, question, answers, hint_link, display_date FROM quizzes"
+        )
         quizzes = cur.fetchall()
+    for q in quizzes:
+        if isinstance(q["display_date"], date):
+            q["display_date"] = q["display_date"].isoformat()
 
     return make_response(quizzes)
+
+
+@bp.route("/quizzes/today/status", methods=["GET"])
+@jwt_required
+def today_quiz_status():
+    """
+    오늘 퀴즈 시도 여부 확인
+    ---
+    tags:
+      - Quizzes
+    summary: 사용자가 오늘의 퀴즈를 풀었는지 여부 조회
+    description: 오늘 날짜에 해당하는 퀴즈가 존재하면 사용자가 이미 시도했는지 반환합니다.
+    security:
+      - JWT: []
+    responses:
+      200:
+        description: 시도 여부 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  attempted:
+                    type: boolean
+                    example: true
+      401:
+        description: 인증 실패
+    """
+    user_id = get_current_user_id()
+    today = date.today()
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute("SELECT id FROM quizzes WHERE display_date = %s", (today,))
+        quiz = cur.fetchone()
+        if not quiz:
+            return make_response({"attempted": False})
+
+        cur.execute(
+            "SELECT id FROM user_quiz_attempts WHERE user_id = %s AND quiz_id = %s",
+            (user_id, quiz["id"]),
+        )
+        attempted = cur.fetchone() is not None
+
+    return make_response({"attempted": attempted})
 
 
 @bp.route("/quizzes/<int:quiz_id>/attempt", methods=["POST"])
@@ -426,10 +506,13 @@ def attempt_quiz(quiz_id):
             return make_response({"error": "quiz not found"}, 404)
 
         # 이미 정답을 맞춘 퀴즈인지 확인
-        cur.execute("""
+        cur.execute(
+            """
             SELECT id FROM user_quiz_attempts 
             WHERE user_id = %s AND quiz_id = %s AND is_correct = true
-        """, (user_id, quiz_id))
+        """,
+            (user_id, quiz_id),
+        )
         already_correct = cur.fetchone()
 
         is_correct = answer == quiz["correct_answer"]
@@ -444,34 +527,34 @@ def attempt_quiz(quiz_id):
         reward_given = False
         if is_correct and not already_correct:
             points = 10  # 퀴즈 정답 시 10포인트
-            exp = 5      # 퀴즈 정답 시 5경험치
-            
+            exp = 5  # 퀴즈 정답 시 5경험치
+
             # 포인트 업데이트
-            cur.execute("""
+            cur.execute(
+                """
                 UPDATE users 
                 SET points = points + %s, experience_points = experience_points + %s 
                 WHERE id = %s
-            """, (points, exp, user_id))
-            
+            """,
+                (points, exp, user_id),
+            )
+
             # 보상 기록
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO rewards 
                 (user_id, source_type, source_id, points, experience_points, reward_reason)
                 VALUES (%s, %s, %s, %s, %s, %s)
-            """, (user_id, "quiz", quiz_id, points, exp, "퀴즈 정답"))
-            
+            """,
+                (user_id, "quiz", quiz_id, points, exp, "퀴즈 정답"),
+            )
+
             reward_given = True
 
-    response_data = {
-        "is_correct": is_correct,
-        "reward_given": reward_given
-    }
-    
+    response_data = {"is_correct": is_correct, "reward_given": reward_given}
+
     if reward_given:
-        response_data.update({
-            "points_earned": 10,
-            "experience_earned": 5
-        })
+        response_data.update({"points_earned": 10, "experience_earned": 5})
 
     return make_response(response_data)
 
