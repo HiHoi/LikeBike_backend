@@ -16,6 +16,7 @@ from .routes.quizzes import bp as quizzes_bp
 from .routes.recommendations import bp as recommendations_bp
 from .routes.storage import bp as storage_bp
 from .routes.users import bp as users_bp
+from .routes.rewards import bp as rewards_bp
 
 load_dotenv()
 
@@ -171,6 +172,7 @@ def create_app(test_config=None):
     app.register_blueprint(community_bp)
     app.register_blueprint(storage_bp)
     app.register_blueprint(recommendations_bp)
+    app.register_blueprint(rewards_bp)
 
     # Swagger 설정
     swagger_config = {
