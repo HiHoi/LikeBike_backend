@@ -274,15 +274,32 @@ def update_user():
     return make_response(dict(updated))
 
 
+def _remove_user(user_id: int) -> int:
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        return cur.rowcount
+
+
 @bp.route("/users/profile", methods=["DELETE"])
 @jwt_required
 def delete_user():
     user_id = get_current_user_id()
-    db = get_db()
-    with db.cursor() as cur:
-        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
-        if cur.rowcount == 0:
-            return make_response({"error": "user not found"}, 404)
+    deleted = _remove_user(user_id)
+    if deleted == 0:
+        return make_response({"error": "user not found"}, 404)
+
+    return make_response(None, 204)
+
+
+@bp.route("/users/withdraw", methods=["DELETE"])
+@jwt_required
+def withdraw_user():
+    """사용자가 자신의 계정을 완전히 삭제합니다."""
+    user_id = get_current_user_id()
+    deleted = _remove_user(user_id)
+    if deleted == 0:
+        return make_response({"error": "user not found"}, 404)
 
     return make_response(None, 204)
 
