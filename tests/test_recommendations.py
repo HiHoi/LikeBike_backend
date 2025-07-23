@@ -5,7 +5,8 @@ import pytest
 
 from app import create_app
 from app.db import get_db
-from tests.test_helpers import get_admin_headers, get_auth_headers, get_test_jwt_token
+from tests.test_helpers import (get_admin_headers, get_auth_headers,
+                                get_test_jwt_token)
 
 
 @pytest.fixture
@@ -123,3 +124,45 @@ def test_verify_recommendation(mock_upload, client, test_user, admin_user):
     data = res.get_json()["data"][0]
     assert data["status"] == "approved"
     assert data["points_awarded"] == 5
+
+
+@patch("app.routes.recommendations.upload_file_to_ncp")
+def test_admin_list_all_recommendations(mock_upload, client, test_user, admin_user):
+    """관리자가 모든 추천 코스를 조회할 수 있는지 확인"""
+    mock_upload.return_value = ("https://test.com/photo.jpg", None)
+
+    user_token = get_test_jwt_token(
+        test_user, f"user_{test_user}", f"user{test_user}@example.com"
+    )
+    user_headers = get_auth_headers(user_token)
+
+    img, _ = create_fake_image()
+    client.post(
+        "/users/course-recommendations",
+        data={
+            "location_name": "한강",
+            "review": "멋진 코스",
+            "photo": (img, "photo.jpg"),
+        },
+        headers=user_headers,
+        content_type="multipart/form-data",
+    )
+
+    admin_token = get_test_jwt_token(
+        admin_user, "admin", "admin@example.com", is_admin=True
+    )
+    admin_headers = get_admin_headers(admin_token)
+
+    res = client.get("/admin/course-recommendations", headers=admin_headers)
+    assert res.status_code == 200
+    data = res.get_json()["data"]
+    assert len(data) >= 1
+
+
+def test_admin_list_requires_privileges(client, test_user):
+    """관리자 권한 없이 모든 코스 추천을 조회할 수 없는지 확인"""
+    token = get_test_jwt_token(test_user, "user", "user@example.com")
+    headers = get_auth_headers(token)
+
+    res = client.get("/admin/course-recommendations", headers=headers)
+    assert res.status_code in (401, 403)

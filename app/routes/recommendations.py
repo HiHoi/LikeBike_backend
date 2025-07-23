@@ -224,3 +224,30 @@ def verify_course_recommendation(rec_id: int):
             )
 
     return make_response(dict(updated))
+
+
+@bp.route("/admin/course-recommendations", methods=["GET"])
+@admin_required
+def list_all_course_recommendations():
+    """모든 코스 추천 목록 조회 (관리자)
+    ---
+    tags:
+      - Course Recommendations
+    summary: 모든 코스 추천 목록 조회
+    description: 관리자가 제출된 모든 코스 추천을 최신순으로 조회합니다.
+    security:
+      - JWT: []
+      - AdminHeader: []
+    responses:
+      200:
+        description: 코스 추천 목록 조회 성공
+      401:
+        description: 인증 실패
+      403:
+        description: 관리자 권한 필요
+    """
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM course_recommendations ORDER BY created_at DESC")
+        rows = cur.fetchall()
+    return make_response([dict(row) for row in rows])
