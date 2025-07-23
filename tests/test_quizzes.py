@@ -1,8 +1,11 @@
+from datetime import date
+
 import pytest
 
 from app import create_app
 from app.db import get_db, init_db
-from tests.test_helpers import get_test_jwt_token, get_admin_jwt_token, get_auth_headers, get_admin_headers
+from tests.test_helpers import (get_admin_headers, get_admin_jwt_token,
+                                get_auth_headers, get_test_jwt_token)
 
 
 @pytest.fixture
@@ -28,13 +31,18 @@ def test_user(app):
         with db.cursor() as cur:
             cur.execute(
                 "INSERT INTO users (kakao_id, username, email, profile_image_url) VALUES (%s, %s, %s, %s) RETURNING id",
-                ("test_kakao_123", "testuser", "test@example.com", "https://k.kakaocdn.net/dn/quiz_user.jpg"),
+                (
+                    "test_kakao_123",
+                    "testuser",
+                    "test@example.com",
+                    "https://k.kakaocdn.net/dn/quiz_user.jpg",
+                ),
             )
             user_id = cur.fetchone()["id"]
         return user_id
 
 
-@pytest.fixture 
+@pytest.fixture
 def test_admin_user(app):
     """테스트용 관리자 사용자 생성"""
     with app.app_context():
@@ -42,7 +50,13 @@ def test_admin_user(app):
         with db.cursor() as cur:
             cur.execute(
                 "INSERT INTO users (kakao_id, username, email, profile_image_url, is_admin) VALUES (%s, %s, %s, %s, %s) RETURNING id",
-                ("admin_kakao_999", "admin", "admin@example.com", "https://k.kakaocdn.net/dn/admin.jpg", True),
+                (
+                    "admin_kakao_999",
+                    "admin",
+                    "admin@example.com",
+                    "https://k.kakaocdn.net/dn/admin.jpg",
+                    True,
+                ),
             )
             user_id = cur.fetchone()["id"]
         return user_id
@@ -50,14 +64,17 @@ def test_admin_user(app):
 
 def test_admin_create_update_delete_quiz(client, test_admin_user):
     """관리자 퀴즈 생성/수정/삭제 테스트 (JWT + X-Admin 헤더 필요)"""
-    admin_headers = get_admin_headers(get_admin_jwt_token(test_admin_user, "admin", "admin@example.com"))
-    
+    admin_headers = get_admin_headers(
+        get_admin_jwt_token(test_admin_user, "admin", "admin@example.com")
+    )
+
     # create
     create_data = {
         "question": "Q1",
         "correct_answer": "A",
         "answers": ["A", "B", "C"],
-        "hint_link": "http://hint1.com"
+        "hint_link": "http://hint1.com",
+        "display_date": "2024-01-01",
     }
     res = client.post(
         "/admin/quizzes",
@@ -71,6 +88,7 @@ def test_admin_create_update_delete_quiz(client, test_admin_user):
     assert data["correct_answer"] == "A"
     assert data["answers"] == ["A", "B", "C"]
     assert data["hint_link"] == "http://hint1.com"
+    assert data["display_date"] == "2024-01-01"
     quiz_id = data["id"]
 
     # update
@@ -78,7 +96,7 @@ def test_admin_create_update_delete_quiz(client, test_admin_user):
         "question": "Q1 updated",
         "correct_answer": "B",
         "answers": ["X", "Y", "Z"],
-        "hint_link": "http://hint_updated.com"
+        "hint_link": "http://hint_updated.com",
     }
     res = client.put(
         f"/admin/quizzes/{quiz_id}",
@@ -99,17 +117,21 @@ def test_admin_create_update_delete_quiz(client, test_admin_user):
 
 def test_user_attempt_quiz(client, test_user, test_admin_user):
     """사용자 퀴즈 시도 테스트 (JWT 인증 필요)"""
-    admin_headers = get_admin_headers(get_admin_jwt_token(test_admin_user, "admin", "admin@example.com"))
-    user_headers = get_auth_headers(get_test_jwt_token(test_user, "testuser", "test@example.com"))
-    
+    admin_headers = get_admin_headers(
+        get_admin_jwt_token(test_admin_user, "admin", "admin@example.com")
+    )
+    user_headers = get_auth_headers(
+        get_test_jwt_token(test_user, "testuser", "test@example.com")
+    )
+
     # admin creates quiz first
     res = client.post(
         "/admin/quizzes",
         json={
-            "question": "What?", 
-            "correct_answer": "42", 
+            "question": "What?",
+            "correct_answer": "42",
             "answers": ["40", "41", "42"],
-            "hint_link": "http://hint_answer.com"
+            "hint_link": "http://hint_answer.com",
         },
         headers=admin_headers,
     )
@@ -137,42 +159,48 @@ def test_user_attempt_quiz(client, test_user, test_admin_user):
 
 def test_list_quizzes(client, test_user, test_admin_user):
     """퀴즈 목록 조회 테스트 (JWT 인증 필요) - answers와 hint_link 포함 확인"""
-    admin_headers = get_admin_headers(get_admin_jwt_token(test_admin_user, "admin", "admin@example.com"))
-    user_headers = get_auth_headers(get_test_jwt_token(test_user, "testuser", "test@example.com"))
-    
+    admin_headers = get_admin_headers(
+        get_admin_jwt_token(test_admin_user, "admin", "admin@example.com")
+    )
+    user_headers = get_auth_headers(
+        get_test_jwt_token(test_user, "testuser", "test@example.com")
+    )
+
     # 관리자가 퀴즈 생성
     create_data = {
         "question": "Test Question",
         "correct_answer": "Test Answer",
         "answers": ["A", "B", "Test Answer"],
-        "hint_link": "http://test_hint.com"
+        "hint_link": "http://test_hint.com",
+        "display_date": "2024-01-01",
     }
     client.post(
         "/admin/quizzes",
         json=create_data,
         headers=admin_headers,
     )
-    
+
     # 인증된 사용자는 퀴즈 목록 조회 가능하며 answers와 hint_link 포함 확인
     res = client.get("/quizzes", headers=user_headers)
     assert res.status_code == 200
     quizzes = res.get_json()["data"]
     assert len(quizzes) >= 1
-    
+
     # 생성한 퀴즈 찾아서 answers와 hint_link 확인
     found_quiz = None
     for quiz in quizzes:
         if quiz["question"] == "Test Question":
             found_quiz = quiz
             break
-    
+
     assert found_quiz is not None
     assert "answers" in found_quiz
     assert len(found_quiz["answers"]) == 3
     assert "Test Answer" in found_quiz["answers"]
     assert "hint_link" in found_quiz
     assert found_quiz["hint_link"] == "http://test_hint.com"
-    
+    assert found_quiz["display_date"] == "2024-01-01"
+
     # 인증 없이는 접근 불가
     res = client.get("/quizzes")
     assert res.status_code == 401
@@ -180,21 +208,35 @@ def test_list_quizzes(client, test_user, test_admin_user):
 
 def test_admin_unauthorized_access(client, test_user):
     """일반 사용자가 관리자 기능 접근 시도 테스트"""
-    user_headers = get_auth_headers(get_test_jwt_token(test_user, "testuser", "test@example.com"))
-    
+    user_headers = get_auth_headers(
+        get_test_jwt_token(test_user, "testuser", "test@example.com")
+    )
+
     # X-Admin 헤더 없이 시도
     res = client.post(
         "/admin/quizzes",
-        json={"question": "Test", "correct_answer": "Test", "answers": ["A"], "hint_link": "link"},
+        json={
+            "question": "Test",
+            "correct_answer": "Test",
+            "answers": ["A"],
+            "hint_link": "link",
+            "display_date": "2024-01-01",
+        },
         headers=user_headers,
     )
     assert res.status_code == 403
-    
+
     # 일반 사용자가 X-Admin 헤더 추가해도 실패 (토큰에 is_admin=False)
     user_headers["X-Admin"] = "true"
     res = client.post(
         "/admin/quizzes",
-        json={"question": "Test", "correct_answer": "Test", "answers": ["A"], "hint_link": "link"},
+        json={
+            "question": "Test",
+            "correct_answer": "Test",
+            "answers": ["A"],
+            "hint_link": "link",
+            "display_date": "2024-01-01",
+        },
         headers=user_headers,
     )
     assert res.status_code == 403
@@ -202,17 +244,25 @@ def test_admin_unauthorized_access(client, test_user):
 
 def test_quiz_attempt_unauthorized(client, test_admin_user):
     """인증 없이 퀴즈 시도 테스트"""
-    admin_headers = get_admin_headers(get_admin_jwt_token(test_admin_user, "admin", "admin@example.com"))
-    
+    admin_headers = get_admin_headers(
+        get_admin_jwt_token(test_admin_user, "admin", "admin@example.com")
+    )
+
     # 관리자가 퀴즈 생성
     res = client.post(
         "/admin/quizzes",
-        json={"question": "Test", "correct_answer": "42", "answers": ["42"], "hint_link": "link"},
+        json={
+            "question": "Test",
+            "correct_answer": "42",
+            "answers": ["42"],
+            "hint_link": "link",
+            "display_date": "2024-01-01",
+        },
         headers=admin_headers,
     )
     assert res.status_code == 201
     quiz_id = res.get_json()["data"]["id"]
-    
+
     # 인증 없이 퀴즈 시도
     res = client.post(
         f"/quizzes/{quiz_id}/attempt",
@@ -232,7 +282,9 @@ def test_generate_quiz(client, monkeypatch, test_admin_user):
     monkeypatch.setattr("app.routes.quizzes._generate_from_clova", fake_generate)
 
     # 관리자 토큰과 헤더 생성
-    admin_headers = get_admin_headers(get_admin_jwt_token(test_admin_user, "admin", "admin@example.com"))
+    admin_headers = get_admin_headers(
+        get_admin_jwt_token(test_admin_user, "admin", "admin@example.com")
+    )
 
     res = client.post(
         "/admin/quizzes/generate",
@@ -250,9 +302,13 @@ def test_generate_quiz(client, monkeypatch, test_admin_user):
 
 def test_quiz_explanation_view_and_points(client, test_user, test_admin_user):
     """퀴즈 해설 조회 및 포인트 지급 테스트"""
-    admin_headers = get_admin_headers(get_admin_jwt_token(test_admin_user, "admin", "admin@example.com"))
-    user_headers = get_auth_headers(get_test_jwt_token(test_user, "testuser", "test@example.com"))
-    
+    admin_headers = get_admin_headers(
+        get_admin_jwt_token(test_admin_user, "admin", "admin@example.com")
+    )
+    user_headers = get_auth_headers(
+        get_test_jwt_token(test_user, "testuser", "test@example.com")
+    )
+
     # 관리자가 퀴즈 생성
     res = client.post(
         "/admin/quizzes",
@@ -260,23 +316,28 @@ def test_quiz_explanation_view_and_points(client, test_user, test_admin_user):
             "question": "자전거 안전을 위해 반드시 착용해야 하는 것은?",
             "correct_answer": "헬멧",
             "answers": ["모자", "선글라스", "헬멧", "장갑"],
-            "hint_link": "http://example.com/hint"
+            "hint_link": "http://example.com/hint",
+            "display_date": "2024-01-01",
         },
         headers=admin_headers,
     )
     assert res.status_code == 201
     quiz_id = res.get_json()["data"]["id"]
-    
+
     # 해설 추가 (실제 API가 있다면)
     with client.application.app_context():
         from app.db import get_db
+
         db = get_db()
         with db.cursor() as cur:
             cur.execute(
                 "INSERT INTO quiz_explanations (quiz_id, explanation) VALUES (%s, %s)",
-                (quiz_id, "헬멧은 자전거 이용 시 머리를 보호하는 필수 안전 장비입니다.")
+                (
+                    quiz_id,
+                    "헬멧은 자전거 이용 시 머리를 보호하는 필수 안전 장비입니다.",
+                ),
             )
-    
+
     # 사용자가 퀴즈 정답 시도
     res = client.post(
         f"/quizzes/{quiz_id}/attempt",
@@ -286,16 +347,20 @@ def test_quiz_explanation_view_and_points(client, test_user, test_admin_user):
     assert res.status_code == 200
     data = res.get_json()["data"]
     assert data["is_correct"] is True
-    
+
     # 처음 해설 조회 시 포인트 지급 (API가 구현되어 있다면)
     # 이 부분은 실제 해설 조회 API가 구현되면 테스트 가능
-    
+
 
 def test_quiz_attempt_once_only(client, test_user, test_admin_user):
     """퀴즈는 한 번만 시도 가능한지 테스트"""
-    admin_headers = get_admin_headers(get_admin_jwt_token(test_admin_user, "admin", "admin@example.com"))
-    user_headers = get_auth_headers(get_test_jwt_token(test_user, "testuser", "test@example.com"))
-    
+    admin_headers = get_admin_headers(
+        get_admin_jwt_token(test_admin_user, "admin", "admin@example.com")
+    )
+    user_headers = get_auth_headers(
+        get_test_jwt_token(test_user, "testuser", "test@example.com")
+    )
+
     # 관리자가 퀴즈 생성
     res = client.post(
         "/admin/quizzes",
@@ -303,13 +368,14 @@ def test_quiz_attempt_once_only(client, test_user, test_admin_user):
             "question": "테스트 질문",
             "correct_answer": "정답",
             "answers": ["오답1", "오답2", "정답", "오답3"],
-            "hint_link": "http://test_attempt_hint.com"
+            "hint_link": "http://test_attempt_hint.com",
+            "display_date": "2024-01-01",
         },
         headers=admin_headers,
     )
     assert res.status_code == 201
     quiz_id = res.get_json()["data"]["id"]
-    
+
     # 첫 번째 시도 (틀린 답)
     res = client.post(
         f"/quizzes/{quiz_id}/attempt",
@@ -318,7 +384,7 @@ def test_quiz_attempt_once_only(client, test_user, test_admin_user):
     )
     assert res.status_code == 200
     assert res.get_json()["data"]["is_correct"] is False
-    
+
     # 두 번째 시도 (같은 퀴즈) - 현재 구현에서는 중복 시도를 막지 않으므로 200이 반환됨
     # 실제로는 400이나 409가 반환되어야 함
     res = client.post(
@@ -332,9 +398,13 @@ def test_quiz_attempt_once_only(client, test_user, test_admin_user):
 
 def test_quiz_correct_answer_points_only_once(client, test_user, test_admin_user):
     """퀴즈 정답 시 포인트는 한 번만 지급되는지 테스트"""
-    admin_headers = get_admin_headers(get_admin_jwt_token(test_admin_user, "admin", "admin@example.com"))
-    user_headers = get_auth_headers(get_test_jwt_token(test_user, "testuser", "test@example.com"))
-    
+    admin_headers = get_admin_headers(
+        get_admin_jwt_token(test_admin_user, "admin", "admin@example.com")
+    )
+    user_headers = get_auth_headers(
+        get_test_jwt_token(test_user, "testuser", "test@example.com")
+    )
+
     # 관리자가 퀴즈 생성
     res = client.post(
         "/admin/quizzes",
@@ -342,21 +412,23 @@ def test_quiz_correct_answer_points_only_once(client, test_user, test_admin_user
             "question": "포인트 테스트 질문",
             "correct_answer": "정답",
             "answers": ["정답", "오답1", "오답2", "오답3"],
-            "hint_link": "http://test_point_hint.com"
+            "hint_link": "http://test_point_hint.com",
+            "display_date": "2024-01-01",
         },
         headers=admin_headers,
     )
     assert res.status_code == 201
     quiz_id = res.get_json()["data"]["id"]
-    
+
     # 사용자 포인트 확인
     with client.application.app_context():
         from app.db import get_db
+
         db = get_db()
         with db.cursor() as cur:
             cur.execute("SELECT points FROM users WHERE id = %s", (test_user,))
             initial_points = cur.fetchone()["points"]
-    
+
     # 첫 번째 정답 시도
     res = client.post(
         f"/quizzes/{quiz_id}/attempt",
@@ -367,7 +439,7 @@ def test_quiz_correct_answer_points_only_once(client, test_user, test_admin_user
     data = res.get_json()["data"]
     assert data["is_correct"] is True
     assert data["reward_given"] is True
-    
+
     # 포인트가 증가했는지 확인
     with client.application.app_context():
         db = get_db()
@@ -375,7 +447,7 @@ def test_quiz_correct_answer_points_only_once(client, test_user, test_admin_user
             cur.execute("SELECT points FROM users WHERE id = %s", (test_user,))
             after_points = cur.fetchone()["points"]
             assert after_points > initial_points
-    
+
     # 같은 퀴즈에 다시 정답 시도 (현재 구현상 가능하지만 포인트는 지급되지 않음)
     res = client.post(
         f"/quizzes/{quiz_id}/attempt",
@@ -390,14 +462,17 @@ def test_quiz_correct_answer_points_only_once(client, test_user, test_admin_user
 
 def test_quiz_answers_array_support(client, test_admin_user):
     """퀴즈 답안 배열 지원 테스트"""
-    admin_headers = get_admin_headers(get_admin_jwt_token(test_admin_user, "admin", "admin@example.com"))
-    
+    admin_headers = get_admin_headers(
+        get_admin_jwt_token(test_admin_user, "admin", "admin@example.com")
+    )
+
     # 답안 배열 및 hint_link가 포함된 퀴즈 생성
     create_data = {
         "question": "자전거 안전 장비로 올바른 것들은?",
         "correct_answer": "헬멧",
         "answers": ["헬멧", "무릎보호대", "반사조끼", "장갑"],
-        "hint_link": "http://answers_hint.com"
+        "hint_link": "http://answers_hint.com",
+        "display_date": "2024-01-01",
     }
     res = client.post(
         "/admin/quizzes",
@@ -411,9 +486,54 @@ def test_quiz_answers_array_support(client, test_admin_user):
     assert "헬멧" in data["answers"]
     assert "hint_link" in data
     assert data["hint_link"] == "http://answers_hint.com"
+    assert data["display_date"] == "2024-01-01"
 
 
 def test_list_quizzes_unauthenticated(client):
     """인증되지 않은 사용자의 퀴즈 목록 조회 테스트"""
     res = client.get("/quizzes")
     assert res.status_code == 401
+
+
+def test_today_quiz_status(client, test_user, test_admin_user):
+    """오늘 퀴즈 시도 여부 확인 API 테스트"""
+    admin_headers = get_admin_headers(
+        get_admin_jwt_token(test_admin_user, "admin", "admin@example.com")
+    )
+    user_headers = get_auth_headers(
+        get_test_jwt_token(test_user, "testuser", "test@example.com")
+    )
+
+    # 오늘 날짜 퀴즈 생성
+    today = date.today().isoformat()
+    res = client.post(
+        "/admin/quizzes",
+        json={
+            "question": "오늘의 문제?",
+            "correct_answer": "정답",
+            "answers": ["정답", "오답"],
+            "hint_link": "http://hint.com",
+            "display_date": today,
+        },
+        headers=admin_headers,
+    )
+    assert res.status_code == 201
+    quiz_id = res.get_json()["data"]["id"]
+
+    # 시도 전 상태 확인
+    res = client.get("/quizzes/today/status", headers=user_headers)
+    assert res.status_code == 200
+    assert res.get_json()["data"][0]["attempted"] is False
+
+    # 퀴즈 시도
+    res = client.post(
+        f"/quizzes/{quiz_id}/attempt",
+        json={"answer": "정답"},
+        headers=user_headers,
+    )
+    assert res.status_code == 200
+
+    # 시도 후 상태 확인
+    res = client.get("/quizzes/today/status", headers=user_headers)
+    assert res.status_code == 200
+    assert res.get_json()["data"][0]["attempted"] is True
