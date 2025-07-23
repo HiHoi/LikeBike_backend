@@ -703,3 +703,49 @@ def get_bike_log_detail(log_id):
             return make_response({"error": "access denied"}, 403)
 
     return make_response(dict(log))
+
+
+@bp.route("/users/bike-logs/today/count", methods=["GET"])
+@jwt_required
+def get_today_bike_log_count():
+    """
+    오늘 자전거 활동 인증 횟수 조회
+    ---
+    tags:
+      - Bike Logs
+    summary: 오늘 사용자가 등록한 자전거 활동 인증 횟수 반환
+    description: 로그인한 사용자가 오늘 몇 번 자전거 활동을 인증했는지 확인합니다.
+    security:
+      - JWT: []
+    responses:
+      200:
+        description: 오늘 인증 횟수 조회 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: object
+              properties:
+                count:
+                  type: integer
+                  example: 1
+      401:
+        description: 인증 실패
+    """
+    user_id = get_current_user_id()
+
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM bike_usage_logs WHERE user_id = %s AND created_at::date = CURRENT_DATE",
+            (user_id,),
+        )
+        count = cur.fetchone()[0]
+
+    return make_response({"count": count})
