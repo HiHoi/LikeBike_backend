@@ -238,6 +238,21 @@ CREATE TABLE safety_reports (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
+CREATE TABLE course_recommendations (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    location_name VARCHAR(255) NOT NULL,
+    photo_url VARCHAR(512),
+    review TEXT NOT NULL,
+    status VARCHAR(50) DEFAULT 'pending',
+    points_awarded INTEGER DEFAULT 0,
+    reviewed_by_admin_id INTEGER,
+    reviewed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (reviewed_by_admin_id) REFERENCES users (id) ON DELETE SET NULL
+);
+
 
 -- 즐겨찾기
 CREATE TABLE favorites (
