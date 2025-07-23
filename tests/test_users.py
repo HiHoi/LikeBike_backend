@@ -114,6 +114,31 @@ def test_delete_user_profile(client, monkeypatch, app):
     assert res.status_code == 204
 
 
+def test_withdraw_user(client, monkeypatch):
+    """신규 회원 탈퇴 엔드포인트 테스트"""
+
+    async def fake_fetch(token: str):
+        return {
+            "id": 999,
+            "kakao_account": {
+                "email": "test@kakao.com",
+                "profile": {
+                    "nickname": "kakao_user",
+                    "profile_image_url": "https://k.kakaocdn.net/dn/test_profile.jpg",
+                },
+            },
+        }
+
+    monkeypatch.setattr("app.routes.users.fetch_kakao_user_info", fake_fetch)
+
+    res = client.post("/users", json={"access_token": "token"})
+    jwt_token = res.get_json()["data"][0]["access_token"]
+
+    headers = {"Authorization": f"Bearer {jwt_token}"}
+    res = client.delete("/users/withdraw", headers=headers)
+    assert res.status_code == 204
+
+
 def test_get_user_profile(client, monkeypatch, app):
     """사용자 프로필 조회 테스트 (JWT 인증 필요)"""
 
