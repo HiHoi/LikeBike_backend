@@ -355,6 +355,10 @@ def list_quizzes():
                   hint_link:
                     type: string
                     example: "https://example.com/hint"
+                  display_date:
+                    type: string
+                    format: date
+                    example: "2024-01-01"
       401:
         description: 인증 실패
     """

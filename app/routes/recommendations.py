@@ -199,9 +199,9 @@ def verify_course_recommendation(rec_id: int):
           properties:
             status:
               type: string
-              enum: [approved, rejected]
+              enum: [verified, rejected]
               description: 승인 여부
-              example: approved
+              example: verified
             points:
               type: integer
               description: 승인 시 지급할 포인트
@@ -222,10 +222,10 @@ def verify_course_recommendation(rec_id: int):
     status = data.get("status")
     points = data.get("points", 0)
 
-    if status not in ["approved", "rejected"]:
-        return make_response({"error": "status must be 'approved' or 'rejected'"}, 400)
+    if status not in ["verified", "rejected"]:
+        return make_response({"error": "status must be 'verified' or 'rejected'"}, 400)
 
-    if status == "approved" and points <= 0:
+    if status == "verified" and points <= 0:
         return make_response({"error": "points must be greater than 0"}, 400)
 
     admin_id = get_current_user_id()
@@ -254,11 +254,11 @@ def verify_course_recommendation(rec_id: int):
             WHERE id = %s
             RETURNING id, status, points_awarded, reviewed_at
             """,
-            (status, points if status == "approved" else 0, admin_id, rec_id),
+            (status, points if status == "verified" else 0, admin_id, rec_id),
         )
         updated = cur.fetchone()
 
-        if status == "approved" and points > 0:
+        if status == "verified" and points > 0:
             cur.execute(
                 """
                 UPDATE users

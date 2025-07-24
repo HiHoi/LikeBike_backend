@@ -73,7 +73,10 @@ def create_app(test_config=None):
             r"/*": {  # 모든 경로 허용
                 "origins": [
                     "http://localhost:3000",
+                    "http://localhost:3001",
                     "http://127.0.0.1:3000",
+                    "http://127.0.0.1:3001",
+                    "https://likebike-admin.vercel.app/",
                     "https://port-0-likebike-mc4iz1js1403f457.sel5.cloudtype.app",
                     "https://like-bike-front.vercel.app",
                 ],
