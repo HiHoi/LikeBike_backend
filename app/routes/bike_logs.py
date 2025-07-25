@@ -180,11 +180,12 @@ def create_bike_log():
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "SELECT COUNT(*) FROM bike_usage_logs"
+            "SELECT COUNT(*) as count FROM bike_usage_logs"
             " WHERE user_id = %s AND created_at::date = CURRENT_DATE",
             (user_id,),
         )
-        if cur.fetchone()[0] >= 1:
+        result = cur.fetchone()
+        if result and result["count"] >= 1:
             return make_response({"error": "daily bike log limit reached"}, 400)
 
     bike_photo = request.files["bike_photo"]
@@ -743,9 +744,10 @@ def get_today_bike_log_count():
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "SELECT COUNT(*) FROM bike_usage_logs WHERE user_id = %s AND created_at::date = CURRENT_DATE",
+            "SELECT COUNT(*) as count FROM bike_usage_logs WHERE user_id = %s AND created_at::date = CURRENT_DATE",
             (user_id,),
         )
-        count = cur.fetchone()[0]
+        result = cur.fetchone()
+        count = result["count"] if result else 0
 
     return make_response({"count": count})

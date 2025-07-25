@@ -62,11 +62,12 @@ def create_course_recommendation():
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "SELECT COUNT(*) FROM course_recommendations"
+            "SELECT COUNT(*) as count FROM course_recommendations"
             " WHERE user_id = %s AND created_at::date = CURRENT_DATE",
             (user_id,),
         )
-        if cur.fetchone()[0] >= 2:
+        result = cur.fetchone()
+        if result and result["count"] >= 2:
             return make_response(
                 {"error": "daily course recommendation limit reached"}, 400
             )
@@ -161,11 +162,12 @@ def today_course_recommendation_count():
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "SELECT COUNT(*) FROM course_recommendations "
+            "SELECT COUNT(*) as count FROM course_recommendations "
             "WHERE user_id = %s AND created_at::date = CURRENT_DATE",
             (user_id,),
         )
-        count = cur.fetchone()[0]
+        result = cur.fetchone()
+        count = result["count"] if result else 0
 
     return make_response({"count": count})
 
