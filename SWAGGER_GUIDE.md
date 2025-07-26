@@ -60,9 +60,9 @@ LikeBike 백엔드 API는 Swagger UI를 통해 문서화되어 있으며, 쉽게
 ### Course Recommendations (코스 추천)
 
 - 코스 추천 등록
-- 하루 두 번까지만 가능
+- 주 두 번까지만 가능
 - 코스 추천 목록 조회
-- 오늘 등록 횟수 조회
+- 이번 주 등록 횟수 조회
 
 ### Storage (파일 업로드)
 

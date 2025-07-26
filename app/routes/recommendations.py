@@ -19,7 +19,7 @@ def create_course_recommendation():
     summary: 새로운 코스 추천 등록
     description: |
       코스 위치 이름과 후기를 입력하고 사진을 업로드하여 코스를 추천합니다.
-      코스 추천은 하루 두 번까지만 등록할 수 있습니다.
+      코스 추천은 **주당 두 번**까지만 등록할 수 있습니다.
     security:
       - JWT: []
     consumes:
@@ -58,18 +58,19 @@ def create_course_recommendation():
     if "photo" not in request.files:
         return make_response({"error": "photo required"}, 400)
 
-    # 하루 2회 제한
+    # 주 2회 제한
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) as count FROM course_recommendations"
-            " WHERE user_id = %s AND created_at::date = CURRENT_DATE",
+            " WHERE user_id = %s"
+            " AND created_at >= date_trunc('week', CURRENT_DATE)",
             (user_id,),
         )
         result = cur.fetchone()
         if result and result["count"] >= 2:
             return make_response(
-                {"error": "daily course recommendation limit reached"}, 400
+                {"error": "weekly course recommendation limit reached"}, 400
             )
 
     photo = request.files["photo"]
@@ -125,14 +126,14 @@ def list_course_recommendations():
     return make_response([dict(row) for row in rows])
 
 
-@bp.route("/users/course-recommendations/today/count", methods=["GET"])
+@bp.route("/users/course-recommendations/week/count", methods=["GET"])
 @jwt_required
-def today_course_recommendation_count():
-    """오늘의 코스 추천 생성 횟수 조회
+def week_course_recommendation_count():
+    """이번 주 코스 추천 생성 횟수 조회
     ---
     tags:
       - Course Recommendations
-    summary: 사용자가 오늘 생성한 코스 추천 횟수 조회
+    summary: 사용자가 이번 주에 생성한 코스 추천 횟수 조회
     security:
       - JWT: []
     responses:
@@ -163,7 +164,7 @@ def today_course_recommendation_count():
     with db.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) as count FROM course_recommendations "
-            "WHERE user_id = %s AND created_at::date = CURRENT_DATE",
+            "WHERE user_id = %s AND created_at >= date_trunc('week', CURRENT_DATE)",
             (user_id,),
         )
         result = cur.fetchone()
