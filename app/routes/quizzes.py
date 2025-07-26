@@ -50,6 +50,7 @@ def create_quiz():
             - correct_answer
             - answers
             - hint_link
+            - explanation
             - display_date
           properties:
             question:
@@ -64,6 +65,10 @@ def create_quiz():
               type: string
               description: 힌트에 대한 사이트 링크
               example: "https://example.com/hint"
+            explanation:
+              type: string
+              description: 정답 해설
+              example: "헬멧은 머리를 보호하기 위한 필수 장비입니다."
             answers:
               type: array
               description: 선택지 배열 (정답 포함)
@@ -125,6 +130,7 @@ def create_quiz():
     correct_answer = data.get("correct_answer")
     answers = data.get("answers", [])  # 선택지 배열
     hint_link = data.get("hint_link")
+    explanation = data.get("explanation")
     display_date = data.get("display_date") or date.today()
     if not question or not correct_answer:
         return make_response({"error": "question and correct_answer required"}, 400)
@@ -132,8 +138,8 @@ def create_quiz():
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO quizzes (question, correct_answer, answers, hint_link, display_date) VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (question, correct_answer, answers, hint_link, display_date),
+            "INSERT INTO quizzes (question, correct_answer, answers, hint_link, explanation, display_date) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (question, correct_answer, answers, hint_link, explanation, display_date),
         )
         quiz_id = cur.fetchone()["id"]
 
@@ -144,6 +150,7 @@ def create_quiz():
             "hint_link": hint_link,
             "correct_answer": correct_answer,
             "answers": answers,
+            "explanation": explanation,
             "display_date": display_date.isoformat(),
         },
         201,
@@ -180,6 +187,7 @@ def update_quiz(quiz_id):
             - correct_answer
             - answers
             - hint_link
+            - explanation
           properties:
             question:
               type: string
@@ -199,6 +207,10 @@ def update_quiz(quiz_id):
               type: string
               description: 힌트에 대한 사이트 링크
               example: "https://example.com/hint"
+            explanation:
+              type: string
+              description: 정답 해설
+              example: "헬멧은 머리를 보호하기 위한 필수 장비입니다."
     responses:
       200:
         description: 퀴즈 수정 성공
@@ -233,6 +245,9 @@ def update_quiz(quiz_id):
                   hint_link:
                     type: string
                     example: "https://example.com/hint"
+                  explanation:
+                    type: string
+                    example: "헬멧은 머리를 보호하기 위한 필수 장비입니다."
                   display_date:
                     type: string
                     format: date
@@ -251,14 +266,15 @@ def update_quiz(quiz_id):
     correct_answer = data.get("correct_answer")
     answers = data.get("answers", [])
     hint_link = data.get("hint_link")
+    explanation = data.get("explanation")
     if not question or not correct_answer:
         return make_response({"error": "question and correct_answer required"}, 400)
 
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "UPDATE quizzes SET question = %s, correct_answer = %s, answers = %s, hint_link = %s WHERE id = %s RETURNING id, question, correct_answer, answers, hint_link",
-            (question, correct_answer, answers, hint_link, quiz_id),
+            "UPDATE quizzes SET question = %s, correct_answer = %s, answers = %s, hint_link = %s, explanation = %s WHERE id = %s RETURNING id, question, correct_answer, answers, hint_link, explanation",
+            (question, correct_answer, answers, hint_link, explanation, quiz_id),
         )
         result = cur.fetchone()
         if not result:
@@ -355,6 +371,9 @@ def list_quizzes():
                   hint_link:
                     type: string
                     example: "https://example.com/hint"
+                  explanation:
+                    type: string
+                    example: "헬멧은 머리를 보호하기 위한 필수 장비입니다."
                   display_date:
                     type: string
                     format: date
@@ -365,7 +384,7 @@ def list_quizzes():
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "SELECT id, question, answers, hint_link, display_date FROM quizzes"
+            "SELECT id, question, answers, hint_link, explanation, display_date FROM quizzes"
         )
         quizzes = cur.fetchall()
     for q in quizzes:

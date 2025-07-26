@@ -152,6 +152,10 @@ QUIZ_MODEL = {
             "items": {"type": "string"},
             "example": ["모자", "선글라스", "헬멧", "장갑"],
         },
+        "explanation": {
+            "type": "string",
+            "example": "헬멧은 머리를 보호하기 위한 필수 장비입니다.",
+        },
     },
 }
 

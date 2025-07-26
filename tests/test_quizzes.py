@@ -74,6 +74,7 @@ def test_admin_create_update_delete_quiz(client, test_admin_user):
         "correct_answer": "A",
         "answers": ["A", "B", "C"],
         "hint_link": "http://hint1.com",
+        "explanation": "정답은 A 입니다",
         "display_date": "2024-01-01",
     }
     res = client.post(
@@ -88,6 +89,7 @@ def test_admin_create_update_delete_quiz(client, test_admin_user):
     assert data["correct_answer"] == "A"
     assert data["answers"] == ["A", "B", "C"]
     assert data["hint_link"] == "http://hint1.com"
+    assert data["explanation"] == "정답은 A 입니다"
     assert data["display_date"] == "2024-01-01"
     quiz_id = data["id"]
 
@@ -97,6 +99,7 @@ def test_admin_create_update_delete_quiz(client, test_admin_user):
         "correct_answer": "B",
         "answers": ["X", "Y", "Z"],
         "hint_link": "http://hint_updated.com",
+        "explanation": "업데이트 해설",
     }
     res = client.put(
         f"/admin/quizzes/{quiz_id}",
@@ -109,6 +112,7 @@ def test_admin_create_update_delete_quiz(client, test_admin_user):
     assert data["correct_answer"] == "B"
     assert data["answers"] == ["X", "Y", "Z"]
     assert data["hint_link"] == "http://hint_updated.com"
+    assert data["explanation"] == "업데이트 해설"
 
     # delete
     res = client.delete(f"/admin/quizzes/{quiz_id}", headers=admin_headers)
@@ -132,6 +136,7 @@ def test_user_attempt_quiz(client, test_user, test_admin_user):
             "correct_answer": "42",
             "answers": ["40", "41", "42"],
             "hint_link": "http://hint_answer.com",
+            "explanation": "answer is 42",
         },
         headers=admin_headers,
     )
@@ -172,6 +177,7 @@ def test_list_quizzes(client, test_user, test_admin_user):
         "correct_answer": "Test Answer",
         "answers": ["A", "B", "Test Answer"],
         "hint_link": "http://test_hint.com",
+        "explanation": "테스트 해설",
         "display_date": "2024-01-01",
     }
     client.post(
@@ -199,6 +205,7 @@ def test_list_quizzes(client, test_user, test_admin_user):
     assert "Test Answer" in found_quiz["answers"]
     assert "hint_link" in found_quiz
     assert found_quiz["hint_link"] == "http://test_hint.com"
+    assert found_quiz["explanation"] == "테스트 해설"
     assert found_quiz["display_date"] == "2024-01-01"
 
     # 인증 없이는 접근 불가
@@ -317,6 +324,7 @@ def test_quiz_explanation_view_and_points(client, test_user, test_admin_user):
             "correct_answer": "헬멧",
             "answers": ["모자", "선글라스", "헬멧", "장갑"],
             "hint_link": "http://example.com/hint",
+            "explanation": "헬멧 착용 이유",
             "display_date": "2024-01-01",
         },
         headers=admin_headers,
@@ -324,17 +332,17 @@ def test_quiz_explanation_view_and_points(client, test_user, test_admin_user):
     assert res.status_code == 201
     quiz_id = res.get_json()["data"]["id"]
 
-    # 해설 추가 (실제 API가 있다면)
+    # 해설 업데이트
     with client.application.app_context():
         from app.db import get_db
 
         db = get_db()
         with db.cursor() as cur:
             cur.execute(
-                "INSERT INTO quiz_explanations (quiz_id, explanation) VALUES (%s, %s)",
+                "UPDATE quizzes SET explanation = %s WHERE id = %s",
                 (
-                    quiz_id,
                     "헬멧은 자전거 이용 시 머리를 보호하는 필수 안전 장비입니다.",
+                    quiz_id,
                 ),
             )
 
@@ -413,6 +421,7 @@ def test_quiz_correct_answer_points_only_once(client, test_user, test_admin_user
             "correct_answer": "정답",
             "answers": ["정답", "오답1", "오답2", "오답3"],
             "hint_link": "http://test_point_hint.com",
+            "explanation": "포인트 해설",
             "display_date": "2024-01-01",
         },
         headers=admin_headers,
@@ -472,6 +481,7 @@ def test_quiz_answers_array_support(client, test_admin_user):
         "correct_answer": "헬멧",
         "answers": ["헬멧", "무릎보호대", "반사조끼", "장갑"],
         "hint_link": "http://answers_hint.com",
+        "explanation": "정답은 헬멧",
         "display_date": "2024-01-01",
     }
     res = client.post(
@@ -486,6 +496,7 @@ def test_quiz_answers_array_support(client, test_admin_user):
     assert "헬멧" in data["answers"]
     assert "hint_link" in data
     assert data["hint_link"] == "http://answers_hint.com"
+    assert data["explanation"] == "정답은 헬멧"
     assert data["display_date"] == "2024-01-01"
 
 
@@ -513,6 +524,7 @@ def test_today_quiz_status(client, test_user, test_admin_user):
             "correct_answer": "정답",
             "answers": ["정답", "오답"],
             "hint_link": "http://hint.com",
+            "explanation": "오늘의 해설",
             "display_date": today,
         },
         headers=admin_headers,
