@@ -523,7 +523,9 @@ def test_today_quiz_status(client, test_user, test_admin_user):
     # 시도 전 상태 확인
     res = client.get("/quizzes/today/status", headers=user_headers)
     assert res.status_code == 200
-    assert res.get_json()["data"][0]["attempted"] is False
+    status = res.get_json()["data"][0]
+    assert status["attempted"] is False
+    assert status["is_correct"] is False
 
     # 퀴즈 시도
     res = client.post(
@@ -536,4 +538,6 @@ def test_today_quiz_status(client, test_user, test_admin_user):
     # 시도 후 상태 확인
     res = client.get("/quizzes/today/status", headers=user_headers)
     assert res.status_code == 200
-    assert res.get_json()["data"][0]["attempted"] is True
+    status = res.get_json()["data"][0]
+    assert status["attempted"] is True
+    assert status["is_correct"] is True
