@@ -91,6 +91,6 @@ def init_app(app):
     app.teardown_appcontext(close_db)
     app.cli.add_command(init_db_command)
     # 개발 환경에서만 자동 초기화
-    if app.config.get("TESTING"):
+    if app.config.get("development"):
         with app.app_context():
             init_db()
