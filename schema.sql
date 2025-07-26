@@ -73,6 +73,7 @@ CREATE TABLE quizzes (
     correct_answer TEXT NOT NULL,
     answers TEXT[], -- PostgreSQL array for multiple choice answers
     hint_link VARCHAR(512),
+    explanation TEXT,
     display_date DATE DEFAULT CURRENT_DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
