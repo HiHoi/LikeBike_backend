@@ -407,6 +407,9 @@ def today_quiz_status():
                   attempted:
                     type: boolean
                     example: true
+                  is_correct:
+                    type: boolean
+                    example: false
       401:
         description: 인증 실패
     """
@@ -417,15 +420,19 @@ def today_quiz_status():
         cur.execute("SELECT id FROM quizzes WHERE display_date = %s", (today,))
         quiz = cur.fetchone()
         if not quiz:
-            return make_response({"attempted": False})
+            return make_response({"attempted": False, "is_correct": False})
 
         cur.execute(
-            "SELECT id FROM user_quiz_attempts WHERE user_id = %s AND quiz_id = %s",
+            "SELECT is_correct FROM user_quiz_attempts "
+            "WHERE user_id = %s AND quiz_id = %s "
+            "ORDER BY attempted_at DESC LIMIT 1",
             (user_id, quiz["id"]),
         )
-        attempted = cur.fetchone() is not None
+        row = cur.fetchone()
+        attempted = row is not None
+        is_correct = row["is_correct"] if row else False
 
-    return make_response({"attempted": attempted})
+    return make_response({"attempted": attempted, "is_correct": is_correct})
 
 
 @bp.route("/quizzes/<int:quiz_id>/attempt", methods=["POST"])
