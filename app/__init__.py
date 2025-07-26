@@ -97,13 +97,6 @@ def create_app(test_config=None):
                 "DATABASE_URL environment variable is required in production"
             )
         app.config.from_mapping(DATABASE_URL=database_url)
-    elif os.environ.get("FLASK_ENV") == "firebase_studio":
-        database_url = os.environ.get("DATABASE_URL")
-        if not database_url:
-            raise ValueError(
-                "DATABASE_URL environment variable is required in production"
-            )
-        app.config.from_mapping(DATABASE_URL=database_url)
     else:
         # 개발환경: 기본값 사용
         app.config.from_mapping(
