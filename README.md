@@ -84,6 +84,7 @@ Swagger UI를 통해 모든 API를 손쉽게 테스트할 수 있습니다.
 
 ### 퀴즈 관련 변경 사항
 
+- 각 퀴즈는 `explanation` 필드로 정답 해설을 포함합니다.
 - 퀴즈 생성 시 `display_date` 필드를 사용해 문제를 노출할 날짜를 지정합니다.
 - `/quizzes` 목록 조회 응답에 `display_date`가 포함됩니다.
 - `/quizzes/today/status` 엔드포인트로 사용자가 오늘 퀴즈를 풀었는지 확인할 수 있습니다.
