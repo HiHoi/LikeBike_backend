@@ -336,11 +336,7 @@ def test_verify_bike_log_success(mock_upload, client, test_user, admin_user):
 
     res = client.post(
         f"/admin/bike-logs/{log_id}/verify",
-        json={
-            "status": "verified",
-            "points": 10,
-            "admin_notes": "안전 장비 착용 확인됨",
-        },
+        json={"status": "verified", "admin_notes": "안전 장비 착용 확인됨"},
         headers=admin_headers,
     )
 
@@ -411,7 +407,7 @@ def test_verify_bike_log_invalid_status(client, admin_user):
 
     res = client.post(
         "/admin/bike-logs/1/verify",
-        json={"status": "invalid_status", "points": 10},
+        json={"status": "invalid_status"},
         headers=admin_headers,
     )
 
@@ -421,21 +417,6 @@ def test_verify_bike_log_invalid_status(client, admin_user):
     )
 
 
-def test_verify_bike_log_missing_points(client, admin_user):
-    """승인 시 포인트 누락 테스트"""
-    admin_token = get_test_jwt_token(
-        admin_user, "admin", "admin@example.com", is_admin=True
-    )
-    admin_headers = get_admin_headers(admin_token)
-
-    res = client.post(
-        "/admin/bike-logs/1/verify",
-        json={"status": "verified", "points": 0},
-        headers=admin_headers,
-    )
-
-    assert res.status_code == 400
-    assert "points must be greater than 0" in res.get_json()["data"][0]["error"]
 
 
 def test_verify_bike_log_not_found(client, admin_user):
@@ -447,7 +428,7 @@ def test_verify_bike_log_not_found(client, admin_user):
 
     res = client.post(
         "/admin/bike-logs/99999/verify",
-        json={"status": "verified", "points": 10},
+        json={"status": "verified"},
         headers=admin_headers,
     )
 
@@ -463,7 +444,7 @@ def test_verify_bike_log_non_admin(client, test_user):
 
     res = client.post(
         "/admin/bike-logs/1/verify",
-        json={"status": "verified", "points": 10},
+        json={"status": "verified"},
         headers=headers,
     )
 

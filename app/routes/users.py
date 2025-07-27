@@ -1,21 +1,23 @@
 from __future__ import annotations
 
-import os
 import asyncio
+import os
 from typing import Any, Dict
 
 import aiohttp
 from flask import Blueprint, request
 
-from ..utils.responses import make_response
-from ..utils.auth import generate_jwt_token, jwt_required, get_current_user_id, refresh_jwt_token, get_token_from_header
-
 from ..db import get_db
+from ..utils.auth import (generate_jwt_token, get_current_user_id,
+                          get_token_from_header, jwt_required,
+                          refresh_jwt_token)
+from ..utils.responses import make_response
 
 bp = Blueprint("users", __name__)
 
 KAKAO_REST_API_KEY = os.environ.get("KAKAO_REST_API_KEY")
 KAKAO_REDIRECT_URI = os.environ.get("KAKAO_REDIRECT_URI")
+
 
 async def fetch_kakao_tokens(code: str) -> dict:
     """Exchange authorization code for access and refresh tokens."""
@@ -32,13 +34,14 @@ async def fetch_kakao_tokens(code: str) -> dict:
             resp.raise_for_status()
             return await resp.json()
 
+
 async def fetch_kakao_user_info(access_token: str) -> dict:
     """Retrieve user info from Kakao API."""
     url = "https://kapi.kakao.com/v2/user/me"
     headers = {
-      "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
-      "Authorization": f"Bearer {access_token}"
-      }
+        "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+        "Authorization": f"Bearer {access_token}",
+    }
     print(headers)
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
@@ -129,7 +132,7 @@ def register_user():
         token_info = asyncio.run(fetch_kakao_tokens(code))
         access_token = token_info.get("access_token")
         if not access_token:
-             return make_response({"error": "failed to get kakao access token"}, 400)
+            return make_response({"error": "failed to get kakao access token"}, 400)
 
         kakao_user_info = asyncio.run(fetch_kakao_user_info(access_token))
 
@@ -138,7 +141,9 @@ def register_user():
         profile = kakao_account.get("profile", {})
         username = profile.get("nickname") or "user"
         email = kakao_account.get("email") or f"{kakao_id}@kakao"
-        profile_image_url = profile.get("profile_image_url") or profile.get("thumbnail_image_url")
+        profile_image_url = profile.get("profile_image_url") or profile.get(
+            "thumbnail_image_url"
+        )
 
         db = get_db()
         with db.cursor() as cur:
@@ -152,7 +157,7 @@ def register_user():
                 # 기존 사용자의 프로필 정보 업데이트 (프로필 이미지 포함)
                 cur.execute(
                     "UPDATE users SET username = %s, email = %s, profile_image_url = %s WHERE id = %s",
-                    (username, email, profile_image_url, user_id)
+                    (username, email, profile_image_url, user_id),
                 )
             else:
                 cur.execute(
@@ -160,23 +165,25 @@ def register_user():
                     (kakao_id, username, email, profile_image_url),
                 )
                 user_id = cur.fetchone()["id"]
-                
+
                 # 기본 설정 생성
                 cur.execute(
-                    "INSERT INTO user_settings (user_id) VALUES (%s)",
-                    (user_id,)
+                    "INSERT INTO user_settings (user_id) VALUES (%s)", (user_id,)
                 )
-            
+
             # JWT 토큰 생성
             jwt_token = generate_jwt_token(user_id, username, email)
-            
-        return make_response({
-            "id": user_id, 
-            "username": username, 
-            "email": email, 
-            "profile_image_url": profile_image_url,
-            "access_token": jwt_token
-        }, 201)
+
+        return make_response(
+            {
+                "id": user_id,
+                "username": username,
+                "email": email,
+                "profile_image_url": profile_image_url,
+                "access_token": jwt_token,
+            },
+            201,
+        )
 
     except Exception as e:
         # TODO: Log the error properly
@@ -382,10 +389,10 @@ def refresh_token():
     """
     current_token = get_token_from_header()
     new_token = refresh_jwt_token(current_token)
-    
+
     if not new_token:
         return make_response({"error": "Failed to refresh token"}, 400)
-    
+
     return make_response({"access_token": new_token}, 200)
 
 
@@ -475,17 +482,20 @@ def get_user_profile():
     user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:
-        cur.execute("""
+        cur.execute(
+            """
             SELECT u.id, u.username, u.email, u.profile_image_url, u.points, u.level, u.experience_points,
                    ul.level_name, ul.description, ul.benefits, u.created_at
             FROM users u
             LEFT JOIN user_levels ul ON u.level = ul.level
             WHERE u.id = %s
-        """, (user_id,))
+        """,
+            (user_id,),
+        )
         user = cur.fetchone()
         if not user:
             return make_response({"error": "user not found"}, 404)
-    
+
     return make_response(dict(user))
 
 
@@ -496,110 +506,82 @@ def update_user_level():
     user_id = get_current_user_id()
     data = request.get_json() or {}
     experience_points = data.get("experience_points", 0)
-    
+
     db = get_db()
     with db.cursor() as cur:
         # 현재 사용자 정보 조회
-        cur.execute("SELECT level, experience_points FROM users WHERE id = %s", (user_id,))
+        cur.execute(
+            "SELECT level, experience_points FROM users WHERE id = %s", (user_id,)
+        )
         user = cur.fetchone()
         if not user:
             return make_response({"error": "user not found"}, 404)
-        
+
         new_exp = user["experience_points"] + experience_points
-        
+
         # 새로운 레벨 계산
-        cur.execute("""
+        cur.execute(
+            """
             SELECT level FROM user_levels 
             WHERE required_exp <= %s 
             ORDER BY level DESC LIMIT 1
-        """, (new_exp,))
+        """,
+            (new_exp,),
+        )
         level_result = cur.fetchone()
         new_level = level_result["level"] if level_result else 1
-        
+
         # 사용자 정보 업데이트
-        cur.execute("""
+        cur.execute(
+            """
             UPDATE users 
             SET experience_points = %s, level = %s 
             WHERE id = %s 
             RETURNING level, experience_points
-        """, (new_exp, new_level, user_id))
+        """,
+            (new_exp, new_level, user_id),
+        )
         updated = cur.fetchone()
-        
+
         level_up = new_level > user["level"]
-    
-    return make_response({
-        "level": updated["level"],
-        "experience_points": updated["experience_points"],
-        "level_up": level_up
-    })
+
+    return make_response(
+        {
+            "level": updated["level"],
+            "experience_points": updated["experience_points"],
+            "level_up": level_up,
+        }
+    )
 
 
 @bp.route("/users/score", methods=["PUT"])
 @jwt_required
 def update_user_score():
-  """
-  사용자 점수 업데이트
-  ---
-  tags:
-    - Users
-  summary: 사용자 점수 증감
-  description: 현재 로그인한 사용자의 점수를 입력된 값만큼 증감합니다. 음수 입력 시 점수는 0 미만으로 내려가지 않습니다.
-  security:
-    - JWT: []
-  parameters:
-    - in: body
-      name: body
-      required: true
-      schema:
-        type: object
-        properties:
-          points:
-            type: integer
-            description: 점수 변화량 (양수 또는 음수). 기본값은 0입니다.
-            example: 10
-            default: 0
-  responses:
-    200:
-      description: 사용자 점수 업데이트 성공
-      schema:
-        type: object
-        properties:
-          code:
-            type: integer
-            example: 200
-          message:
-            type: string
-            example: "OK"
-          data:
-            type: object
-            properties:
-              points:
-                type: integer
-                example: 160`
-    401:
-      description: 인증 실패
-  """
-  user_id = get_current_user_id()
-  data = request.get_json() or {}
-  points_change = data.get("points", 0)
+    """사용자 경험치 업데이트"""
+    user_id = get_current_user_id()
+    data = request.get_json() or {}
+    exp_change = data.get("experience_points", 0)
 
-  db = get_db()
-  with db.cursor() as cur:
-  # 점수 업데이트 (0 미만으로 내려가지 않도록 MAX 함수 사용)
-    cur.execute("""
-UPDATE users SET points = GREATEST(0, points + %s) WHERE id = %s RETURNING points
-""", (points_change, user_id))
-    
-    updated_user = cur.fetchone()
-    if updated_user is None:
-      # 해당 user_id를 가진 사용자가 없을 경우 에러 응답 반환
-      return make_response({"error": "User not found"}, 404)
-    
-    updated_points = updated_user["points"]
-    if not updated_points:
-      return make_response({"error": "user not found"}, 404)
+    db = get_db()
+    with db.cursor() as cur:
+        # 경험치 업데이트 (0 미만으로 내려가지 않도록 GREATEST 사용)
+        cur.execute(
+            """
+            UPDATE users
+            SET experience_points = GREATEST(0, experience_points + %s)
+            WHERE id = %s
+            RETURNING experience_points
+            """,
+            (exp_change, user_id),
+        )
 
-  return make_response({"points": updated_points})
+        updated_user = cur.fetchone()
+        if updated_user is None:
+            return make_response({"error": "User not found"}, 404)
+
+        updated_exp = updated_user["experience_points"]
+
+    return make_response({"experience_points": updated_exp})
 
 
 @bp.route("/users/settings", methods=["GET"])
@@ -666,13 +648,16 @@ def get_user_settings():
         settings = cur.fetchone()
         if not settings:
             # 기본 설정 생성
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO user_settings (user_id) 
                 VALUES (%s) 
                 RETURNING *
-            """, (user_id,))
+            """,
+                (user_id,),
+            )
             settings = cur.fetchone()
-    
+
     return make_response(dict(settings))
 
 
@@ -753,16 +738,17 @@ def update_user_settings():
     """
     user_id = get_current_user_id()
     data = request.get_json() or {}
-    
+
     db = get_db()
     with db.cursor() as cur:
         # 설정이 존재하는지 확인
         cur.execute("SELECT id FROM user_settings WHERE user_id = %s", (user_id,))
         existing = cur.fetchone()
-        
+
         if existing:
             # 업데이트
-            cur.execute("""
+            cur.execute(
+                """
                 UPDATE user_settings 
                 SET notification_enabled = COALESCE(%s, notification_enabled),
                     location_sharing = COALESCE(%s, location_sharing),
@@ -771,30 +757,35 @@ def update_user_settings():
                     updated_at = CURRENT_TIMESTAMP
                 WHERE user_id = %s
                 RETURNING *
-            """, (
-                data.get("notification_enabled"),
-                data.get("location_sharing"),
-                data.get("privacy_level"),
-                data.get("preferences"),
-                user_id
-            ))
+            """,
+                (
+                    data.get("notification_enabled"),
+                    data.get("location_sharing"),
+                    data.get("privacy_level"),
+                    data.get("preferences"),
+                    user_id,
+                ),
+            )
         else:
             # 생성
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO user_settings 
                 (user_id, notification_enabled, location_sharing, privacy_level, preferences)
                 VALUES (%s, %s, %s, %s, %s)
                 RETURNING *
-            """, (
-                user_id,
-                data.get("notification_enabled", True),
-                data.get("location_sharing", False),
-                data.get("privacy_level", "public"),
-                data.get("preferences")
-            ))
-        
+            """,
+                (
+                    user_id,
+                    data.get("notification_enabled", True),
+                    data.get("location_sharing", False),
+                    data.get("privacy_level", "public"),
+                    data.get("preferences"),
+                ),
+            )
+
         updated = cur.fetchone()
-    
+
     return make_response(dict(updated))
 
 
@@ -860,13 +851,16 @@ def get_user_verifications():
     user_id = get_current_user_id()
     db = get_db()
     with db.cursor() as cur:
-        cur.execute("""
+        cur.execute(
+            """
             SELECT * FROM user_verifications 
             WHERE user_id = %s 
             ORDER BY created_at DESC
-        """, (user_id,))
+        """,
+            (user_id,),
+        )
         verifications = cur.fetchall()
-    
+
     return make_response([dict(v) for v in verifications])
 
 
@@ -956,20 +950,23 @@ def create_verification():
     verification_type = data.get("verification_type")
     source_id = data.get("source_id")
     proof_data = data.get("proof_data")
-    
+
     if not verification_type:
         return make_response({"error": "verification_type required"}, 400)
-    
+
     db = get_db()
     with db.cursor() as cur:
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO user_verifications 
             (user_id, verification_type, source_id, proof_data)
             VALUES (%s, %s, %s, %s)
             RETURNING *
-        """, (user_id, verification_type, source_id, proof_data))
+        """,
+            (user_id, verification_type, source_id, proof_data),
+        )
         verification = cur.fetchone()
-    
+
     return make_response(dict(verification), 201)
 
 
@@ -1034,8 +1031,9 @@ def get_all_levels():
     with db.cursor() as cur:
         cur.execute("SELECT * FROM user_levels ORDER BY level")
         levels = cur.fetchall()
-    
+
     return make_response([dict(level) for level in levels])
+
 
 @bp.route("/dev/test-token", methods=["GET"])
 def get_test_token():
@@ -1072,62 +1070,72 @@ def get_test_token():
         description: 프로덕션 환경에서는 사용 불가
     """
     # 프로덕션 환경에서는 비활성화
-    if os.environ.get('FLASK_ENV') == 'production':
+    if os.environ.get("FLASK_ENV") == "production":
         return make_response({"error": "Not available in production"}, 403)
-    
-    user_type = request.args.get('user_type', 'user')
-    
+
+    user_type = request.args.get("user_type", "user")
+
     # 테스트용 사용자 생성/조회
     db = get_db()
     with db.cursor() as cur:
-        if user_type == 'admin':
+        if user_type == "admin":
             # 기존 테스트 관리자 조회
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT id, username, email, is_admin FROM users 
                 WHERE kakao_id = 'test_admin_kakao_id'
-            """)
+            """
+            )
             user = cur.fetchone()
-            
+
             if not user:
                 # 새로 생성
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO users (kakao_id, username, email, is_admin) 
                     VALUES ('test_admin_kakao_id', 'test_admin', 'admin@test.com', true)
                     RETURNING id, username, email, is_admin
-                """)
+                """
+                )
                 user = cur.fetchone()
         else:
             # 기존 테스트 사용자 조회
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT id, username, email, is_admin FROM users 
                 WHERE kakao_id = 'test_user_kakao_id'
-            """)
+            """
+            )
             user = cur.fetchone()
-            
+
             if not user:
                 # 새로 생성
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO users (kakao_id, username, email, is_admin) 
                     VALUES ('test_user_kakao_id', 'test_user', 'user@test.com', false)
                     RETURNING id, username, email, is_admin
-                """)
+                """
+                )
                 user = cur.fetchone()
-        
-        user_id = user['id']
-    
+
+        user_id = user["id"]
+
     # JWT 토큰 생성 (is_admin 정보 포함)
     token = generate_jwt_token(
         user_id=user_id,
-        username=user['username'],
-        email=user['email'],
-        is_admin=user['is_admin']
+        username=user["username"],
+        email=user["email"],
+        is_admin=user["is_admin"],
     )
-    
-    return make_response({
-        "access_token": token,
-        "user_id": user_id,
-        "user_type": user_type,
-        "username": user['username'],
-        "email": user['email'],
-        "is_admin": user['is_admin']
-    })
+
+    return make_response(
+        {
+            "access_token": token,
+            "user_id": user_id,
+            "user_type": user_type,
+            "username": user["username"],
+            "email": user["email"],
+            "is_admin": user["is_admin"],
+        }
+    )
