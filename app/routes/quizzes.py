@@ -489,9 +489,6 @@ def attempt_quiz(quiz_id):
                   reward_given:
                     type: boolean
                     example: true
-                  points_earned:
-                    type: integer
-                    example: 10
                   experience_earned:
                     type: integer
                     example: 5
@@ -537,27 +534,26 @@ def attempt_quiz(quiz_id):
         # 정답이고 처음 맞춘 경우 보상 지급
         reward_given = False
         if is_correct and not already_correct:
-            points = 10  # 퀴즈 정답 시 10포인트
             exp = 5  # 퀴즈 정답 시 5경험치
 
-            # 포인트 업데이트
+            # 경험치 업데이트
             cur.execute(
                 """
-                UPDATE users 
-                SET points = points + %s, experience_points = experience_points + %s 
+                UPDATE users
+                SET experience_points = experience_points + %s
                 WHERE id = %s
-            """,
-                (points, exp, user_id),
+                """,
+                (exp, user_id),
             )
 
             # 보상 기록
             cur.execute(
                 """
-                INSERT INTO rewards 
+                INSERT INTO rewards
                 (user_id, source_type, source_id, points, experience_points, reward_reason)
                 VALUES (%s, %s, %s, %s, %s, %s)
-            """,
-                (user_id, "quiz", quiz_id, points, exp, "퀴즈 정답"),
+                """,
+                (user_id, "quiz", quiz_id, 0, exp, "퀴즈 정답"),
             )
 
             reward_given = True
@@ -565,7 +561,7 @@ def attempt_quiz(quiz_id):
     response_data = {"is_correct": is_correct, "reward_given": reward_given}
 
     if reward_given:
-        response_data.update({"points_earned": 10, "experience_earned": 5})
+        response_data.update({"experience_earned": exp})
 
     return make_response(response_data)
 

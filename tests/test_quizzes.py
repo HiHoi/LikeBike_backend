@@ -426,8 +426,10 @@ def test_quiz_correct_answer_points_only_once(client, test_user, test_admin_user
 
         db = get_db()
         with db.cursor() as cur:
-            cur.execute("SELECT points FROM users WHERE id = %s", (test_user,))
-            initial_points = cur.fetchone()["points"]
+            cur.execute(
+                "SELECT experience_points FROM users WHERE id = %s", (test_user,)
+            )
+            initial_points = cur.fetchone()["experience_points"]
 
     # 첫 번째 정답 시도
     res = client.post(
@@ -440,13 +442,15 @@ def test_quiz_correct_answer_points_only_once(client, test_user, test_admin_user
     assert data["is_correct"] is True
     assert data["reward_given"] is True
 
-    # 포인트가 증가했는지 확인
+    # 경험치가 증가했는지 확인
     with client.application.app_context():
         db = get_db()
         with db.cursor() as cur:
-            cur.execute("SELECT points FROM users WHERE id = %s", (test_user,))
-            after_points = cur.fetchone()["points"]
-            assert after_points > initial_points
+            cur.execute(
+                "SELECT experience_points FROM users WHERE id = %s", (test_user,)
+            )
+            after_exp = cur.fetchone()["experience_points"]
+            assert after_exp > initial_points
 
     # 같은 퀴즈에 다시 정답 시도 (현재 구현상 가능하지만 포인트는 지급되지 않음)
     res = client.post(

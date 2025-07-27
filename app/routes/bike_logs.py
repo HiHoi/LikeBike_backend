@@ -453,8 +453,8 @@ def verify_bike_log(log_id):
     ---
     tags:
       - Bike Logs
-    summary: 자전거 활동 기록 검증 및 포인트 지급 (관리자)
-    description: 관리자가 자전거 활동 기록을 검증하고 포인트를 지급합니다.
+    summary: 자전거 활동 기록 검증 및 경험치 지급 (관리자)
+    description: 관리자가 자전거 활동 기록을 검증하고 경험치를 지급합니다.
     security:
       - JWT: []
       - AdminHeader: []
@@ -477,10 +477,6 @@ def verify_bike_log(log_id):
               enum: [verified, rejected]
               description: 검증 결과
               example: "verified"
-            points:
-              type: integer
-              description: 지급할 포인트 (승인 시)
-              example: 10
             admin_notes:
               type: string
               description: 관리자 메모
@@ -526,16 +522,12 @@ def verify_bike_log(log_id):
     """
     data = request.get_json() or {}
     status = data.get("status")
-    points = data.get("points", 0)
     admin_notes = data.get("admin_notes", "")
+    points = 10  # 자전거 활동 검증 시 지급할 경험치
 
     if status not in ["verified", "rejected"]:
         return make_response({"error": "status must be 'verified' or 'rejected'"}, 400)
 
-    if status == "verified" and points <= 0:
-        return make_response(
-            {"error": "points must be greater than 0 for verified status"}, 400
-        )
 
     admin_id = get_current_user_id()
 
@@ -574,17 +566,16 @@ def verify_bike_log(log_id):
 
         updated_log = cur.fetchone()
 
-        # 승인된 경우 포인트 지급
+        # 승인된 경우 경험치 지급
         if status == "verified" and points > 0:
-            # 사용자 포인트 업데이트
             cur.execute(
                 """
-                UPDATE users 
-                SET points = points + %s, experience_points = experience_points + %s
+                UPDATE users
+                SET experience_points = experience_points + %s
                 WHERE id = %s
-            """,
-                (points, points // 2, user_id),
-            )  # 경험치는 포인트의 절반
+                """,
+                (points, user_id),
+            )
 
             # 보상 기록
             cur.execute(
@@ -597,8 +588,8 @@ def verify_bike_log(log_id):
                     user_id,
                     "bike_usage",
                     log_id,
+                    0,
                     points,
-                    points // 2,
                     "자전거 활동 검증 완료",
                     "completed",
                 ),

@@ -264,10 +264,10 @@ def verify_course_recommendation(rec_id: int):
             cur.execute(
                 """
                 UPDATE users
-                SET points = points + %s, experience_points = experience_points + %s
+                SET experience_points = experience_points + %s
                 WHERE id = %s
                 """,
-                (points, points // 2, user_id),
+                (points, user_id),
             )
             cur.execute(
                 """
@@ -279,8 +279,8 @@ def verify_course_recommendation(rec_id: int):
                     user_id,
                     "course_recommendation",
                     rec_id,
+                    0,
                     points,
-                    points // 2,
                     "코스 추천 승인",
                 ),
             )
