@@ -127,7 +127,7 @@ def test_verify_recommendation(mock_upload, client, test_user, admin_user):
 
 
 @patch("app.routes.recommendations.upload_file_to_ncp")
-def test_daily_recommendation_limit(mock_upload, client, test_user):
+def test_weekly_recommendation_limit(mock_upload, client, test_user):
     mock_upload.return_value = ("https://test.com/photo.jpg", None)
     token = get_test_jwt_token(
         test_user, f"user_{test_user}", f"user{test_user}@example.com"
@@ -160,7 +160,7 @@ def test_daily_recommendation_limit(mock_upload, client, test_user):
         content_type="multipart/form-data",
     )
     assert res.status_code == 400
-    assert "daily course recommendation limit" in res.get_json()["data"][0]["error"]
+    assert "weekly course recommendation limit" in res.get_json()["data"][0]["error"]
 
 
 @patch("app.routes.recommendations.upload_file_to_ncp")
@@ -206,14 +206,14 @@ def test_admin_list_requires_privileges(client, test_user):
 
 
 @patch("app.routes.recommendations.upload_file_to_ncp")
-def test_today_recommendation_count(mock_upload, client, test_user):
+def test_week_recommendation_count(mock_upload, client, test_user):
     mock_upload.return_value = ("https://test.com/photo.jpg", None)
     token = get_test_jwt_token(
         test_user, f"user_{test_user}", f"user{test_user}@example.com"
     )
     headers = get_auth_headers(token)
 
-    res = client.get("/users/course-recommendations/today/count", headers=headers)
+    res = client.get("/users/course-recommendations/week/count", headers=headers)
     assert res.status_code == 200
     assert res.get_json()["data"][0]["count"] == 0
 
@@ -229,6 +229,6 @@ def test_today_recommendation_count(mock_upload, client, test_user):
         content_type="multipart/form-data",
     )
 
-    res = client.get("/users/course-recommendations/today/count", headers=headers)
+    res = client.get("/users/course-recommendations/week/count", headers=headers)
     assert res.status_code == 200
     assert res.get_json()["data"][0]["count"] == 1
