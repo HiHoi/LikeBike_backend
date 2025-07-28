@@ -557,7 +557,48 @@ def update_user_level():
 @bp.route("/users/score", methods=["PUT"])
 @jwt_required
 def update_user_score():
-    """사용자 경험치 업데이트"""
+    """
+    사용자 점수 업데이트
+    ---
+    tags:
+      - Users
+    summary: 사용자 점수 증감
+    description: 현재 로그인한 사용자의 점수를 입력된 값만큼 증감합니다. 음수 입력 시 점수는 0 미만으로 내려가지 않습니다.
+    security:
+      - JWT: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            points:
+              type: integer
+              description: 점수 변화량 (양수 또는 음수). 기본값은 0입니다.
+              example: 10
+              default: 0
+    responses:
+      200:
+        description: 사용자 점수 업데이트 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: object
+              properties:
+                points:
+                  type: integer
+                  example: 160`
+      401:
+        description: 인증 실패
+    """
     user_id = get_current_user_id()
     data = request.get_json() or {}
     exp_change = data.get("experience_points", 0)
