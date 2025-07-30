@@ -1,6 +1,6 @@
 import asyncio
 import os
-from datetime import date
+from datetime import date, datetime
 
 import aiohttp
 from flask import Blueprint, request
@@ -132,6 +132,17 @@ def create_quiz():
     hint_link = data.get("hint_link")
     explanation = data.get("explanation")
     display_date = data.get("display_date") or date.today()
+    
+    # display_date가 문자열인 경우 date 객체로 변환
+    if isinstance(display_date, str):
+        try:
+            display_date = datetime.fromisoformat(display_date).date()
+        except ValueError:
+            try:
+                display_date = datetime.strptime(display_date, "%Y-%m-%d").date()
+            except ValueError:
+                display_date = date.today()
+    
     if not question or not correct_answer:
         return make_response({"error": "question and correct_answer required"}, 400)
 
