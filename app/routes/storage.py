@@ -65,7 +65,8 @@ def upload_file_to_ncp(file, folder_name="test"):
             NCP_BUCKET_NAME,
             object_key,
             ExtraArgs={
-                'ContentType': file.content_type or 'application/octet-stream'
+                'ContentType': file.content_type or 'application/octet-stream',
+                'ACL': 'public-read'
             }
         )
         
