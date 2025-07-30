@@ -575,12 +575,12 @@ def update_user_score():
         required: true
         schema:
           type: object
-            properties:
-                experience_points:
-                  type: integer
-                  description: 점수 변화량 (양수 또는 음수). 기본값은 0입니다.
-                  example: 10
-                  default: 0
+          properties:
+            experience_points:
+              type: integer
+              description: 점수 변화량 (양수 또는 음수). 기본값은 0입니다.
+              example: 10
+              default: 0
             reward_reason:
               type: string
               description: 점수 변동 사유 (보상 기록용)
@@ -608,7 +608,7 @@ def update_user_score():
     """
     user_id = get_current_user_id()
     data = request.get_json() or {}
-    exp_change = data.get("experience_points", 0)
+    exp_change = int(data.get("experience_points", 0) or 0)
     reward_reason = data.get("reward_reason")
 
     db = get_db()
