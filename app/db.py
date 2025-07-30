@@ -15,7 +15,6 @@ def get_db():
             database_url = current_app.config.get("DATABASE_URL") or os.environ.get("DATABASE_URL")
             
             if database_url and database_url.startswith('postgresql://'):
-                print(database_url)
                 g.db = psycopg2.connect(
                     database_url,
                     cursor_factory=psycopg2.extras.RealDictCursor,

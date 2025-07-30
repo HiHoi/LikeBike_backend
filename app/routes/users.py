@@ -42,7 +42,6 @@ async def fetch_kakao_user_info(access_token: str) -> dict:
         "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
         "Authorization": f"Bearer {access_token}",
     }
-    print(headers)
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
             resp.raise_for_status()
