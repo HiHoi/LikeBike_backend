@@ -573,7 +573,7 @@ def update_user_score():
         schema:
           type: object
           properties:
-            points:
+            experience_points:
               type: integer
               description: 점수 변화량 (양수 또는 음수). 기본값은 0입니다.
               example: 10
@@ -593,7 +593,7 @@ def update_user_score():
             data:
               type: object
               properties:
-                points:
+                experience_points:
                   type: integer
                   example: 160`
       401:
