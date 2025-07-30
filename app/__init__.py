@@ -79,6 +79,7 @@ def create_app(test_config=None):
                     "https://likebike-admin.vercel.app",
                     "https://port-0-likebike-mc4iz1js1403f457.sel5.cloudtype.app",
                     "https://like-bike-front.vercel.app",
+                    "http://192.168.0.215:3000",
                 ],
                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                 "allow_headers": ["Content-Type", "Authorization", "X-Admin"],
