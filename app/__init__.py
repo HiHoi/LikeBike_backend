@@ -127,7 +127,7 @@ def create_app(test_config=None):
                     "users",
                     "quizzes",
                     "news",
-                    "bike_logs",
+                    "bike_usage_logs",
                     "community_posts",
                 ]
                 missing_tables = []
