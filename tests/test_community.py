@@ -73,6 +73,14 @@ def test_community_post_crud(client, test_user):
     )
     assert res.status_code == 201
 
+    # 댓글 작성 보상 확인
+    res = client.get("/users/rewards", headers=headers)
+    assert res.status_code == 200
+    rewards = res.get_json()["data"]
+    reasons = [r["reward_reason"] for r in rewards]
+    assert "게시글 작성" in reasons
+    assert "댓글 작성" in reasons
+
     # toggle like
     res = client.post(f"/community/posts/{post_id}/like", headers=headers)
     assert res.status_code == 200

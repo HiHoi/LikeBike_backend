@@ -249,6 +249,41 @@ def create_post():
 
         cur.execute(
             """
+            SELECT id FROM rewards
+            WHERE user_id = %s AND source_type = 'post_comment' AND source_id = %s
+            """,
+            (user_id, comment["id"]),
+        )
+        if not cur.fetchone():
+            cur.execute(
+                """
+                INSERT INTO rewards
+                    (user_id, source_type, source_id, points, experience_points, reward_reason)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (user_id, "post_comment", comment["id"], 0, exp, "댓글 작성"),
+            )
+
+        # 보상 기록이 없으면 추가
+        cur.execute(
+            """
+            SELECT id FROM rewards
+            WHERE user_id = %s AND source_type = 'post_comment' AND source_id = %s
+            """,
+            (user_id, comment["id"]),
+        )
+        if not cur.fetchone():
+            cur.execute(
+                """
+                INSERT INTO rewards
+                    (user_id, source_type, source_id, points, experience_points, reward_reason)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (user_id, "post_comment", comment["id"], 0, exp, "댓글 작성"),
+            )
+
+        cur.execute(
+            """
             INSERT INTO rewards
             (user_id, source_type, source_id, points, experience_points, reward_reason)
             VALUES (%s, %s, %s, %s, %s, %s)
@@ -350,6 +385,22 @@ def create_comment(post_id):
             """,
             (exp, user_id),
         )
+        cur.execute(
+            """
+            SELECT id FROM rewards
+            WHERE user_id = %s AND source_type = 'post_comment' AND source_id = %s
+            """,
+            (user_id, comment["id"]),
+        )
+        if not cur.fetchone():
+            cur.execute(
+                """
+                INSERT INTO rewards
+                    (user_id, source_type, source_id, points, experience_points, reward_reason)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (user_id, "post_comment", comment["id"], 0, exp, "댓글 작성"),
+            )
 
     return make_response(dict(comment), 201)
 
