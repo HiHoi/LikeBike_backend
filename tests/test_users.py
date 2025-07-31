@@ -1,8 +1,8 @@
 import pytest
 
 from app import create_app
-from tests.test_helpers import get_test_jwt_token, get_auth_headers
 from app.db import get_db
+from tests.test_helpers import get_auth_headers, get_test_jwt_token
 
 
 @pytest.fixture
@@ -299,3 +299,41 @@ def test_get_user_rewards(client, monkeypatch, app):
     assert len(rewards) == 1
     assert rewards[0]["id"] == reward_id
     assert rewards[0]["points"] == 5
+
+
+def test_update_user_score_records_reward(client, monkeypatch, app):
+    async def fake_fetch(token: str):
+        return {
+            "id": 999,
+            "kakao_account": {
+                "email": "test@kakao.com",
+                "profile": {
+                    "nickname": "kakao_user",
+                    "profile_image_url": "https://k.kakaocdn.net/dn/test_profile.jpg",
+                },
+            },
+        }
+
+    monkeypatch.setattr("app.routes.users.fetch_kakao_user_info", fake_fetch)
+
+    res = client.post("/users", json={"access_token": "token"})
+    data = res.get_json()["data"][0]
+    jwt_token = data["access_token"]
+    user_id = data["id"]
+
+    headers = {"Authorization": f"Bearer {jwt_token}"}
+    res = client.put(
+        "/users/score",
+        json={"experience_points": 10, "reward_reason": "테스트 경험치"},
+        headers=headers,
+    )
+    assert res.status_code == 200
+    assert res.get_json()["data"][0]["experience_points"] == 10
+
+    res = client.get("/users/rewards", headers=headers)
+    assert res.status_code == 200
+    rewards = res.get_json()["data"]
+    assert len(rewards) == 1
+    assert rewards[0]["user_id"] == user_id
+    assert rewards[0]["experience_points"] == 10
+    assert rewards[0]["reward_reason"] == "테스트 경험치"
