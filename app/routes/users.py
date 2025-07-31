@@ -8,13 +8,9 @@ import aiohttp
 from flask import Blueprint, request
 
 from ..db import get_db
-from ..utils.auth import (
-    generate_jwt_token,
-    get_current_user_id,
-    get_token_from_header,
-    jwt_required,
-    refresh_jwt_token,
-)
+from ..utils.auth import (generate_jwt_token, get_current_user_id,
+                          get_token_from_header, jwt_required,
+                          refresh_jwt_token)
 from ..utils.responses import make_response
 
 bp = Blueprint("users", __name__)
@@ -581,10 +577,6 @@ def update_user_score():
               description: 점수 변화량 (양수 또는 음수). 기본값은 0입니다.
               example: 10
               default: 0
-            reward_reason:
-              type: string
-              description: 점수 변동 사유 (보상 기록용)
-              example: "테스트 보상"
     responses:
       200:
         description: 사용자 점수 업데이트 성공
@@ -608,8 +600,7 @@ def update_user_score():
     """
     user_id = get_current_user_id()
     data = request.get_json() or {}
-    exp_change = int(data.get("experience_points", 0) or 0)
-    reward_reason = data.get("reward_reason")
+    exp_change = data.get("experience_points", 0)
 
     db = get_db()
     with db.cursor() as cur:
@@ -629,23 +620,6 @@ def update_user_score():
             return make_response({"error": "User not found"}, 404)
 
         updated_exp = updated_user["experience_points"]
-
-        if exp_change > 0:
-            cur.execute(
-                """
-                INSERT INTO rewards
-                    (user_id, source_type, points, experience_points, reward_reason, status)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    user_id,
-                    "score_update",
-                    0,
-                    exp_change,
-                    reward_reason,
-                    "completed",
-                ),
-            )
 
     return make_response({"experience_points": updated_exp})
 
