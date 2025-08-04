@@ -132,7 +132,7 @@ def create_quiz():
     hint_link = data.get("hint_link")
     explanation = data.get("explanation")
     display_date = data.get("display_date") or date.today()
-    
+
     # display_date가 문자열인 경우 date 객체로 변환
     if isinstance(display_date, str):
         try:
@@ -142,7 +142,7 @@ def create_quiz():
                 display_date = datetime.strptime(display_date, "%Y-%m-%d").date()
             except ValueError:
                 display_date = date.today()
-    
+
     if not question or not correct_answer:
         return make_response({"error": "question and correct_answer required"}, 400)
 
@@ -453,14 +453,13 @@ def today_quiz_status():
             return make_response({"attempted": False, "is_correct": False})
 
         cur.execute(
-            "SELECT is_correct FROM user_quiz_attempts "
-            "WHERE user_id = %s AND quiz_id = %s "
-            "ORDER BY attempted_at DESC LIMIT 1",
+            "SELECT bool_or(is_correct) AS is_correct, COUNT(*) > 0 AS attempted "
+            "FROM user_quiz_attempts WHERE user_id = %s AND quiz_id = %s",
             (user_id, quiz["id"]),
         )
         row = cur.fetchone()
-        attempted = row is not None
-        is_correct = row["is_correct"] if row else False
+        attempted = row["attempted"]
+        is_correct = row["is_correct"] if attempted else False
 
     return make_response({"attempted": attempted, "is_correct": is_correct})
 

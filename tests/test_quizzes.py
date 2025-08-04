@@ -4,8 +4,12 @@ import pytest
 
 from app import create_app
 from app.db import get_db, init_db
-from tests.test_helpers import (get_admin_headers, get_admin_jwt_token,
-                                get_auth_headers, get_test_jwt_token)
+from tests.test_helpers import (
+    get_admin_headers,
+    get_admin_jwt_token,
+    get_auth_headers,
+    get_test_jwt_token,
+)
 
 
 @pytest.fixture
@@ -552,6 +556,54 @@ def test_today_quiz_status(client, test_user, test_admin_user):
     assert res.status_code == 200
 
     # 시도 후 상태 확인
+    res = client.get("/quizzes/today/status", headers=user_headers)
+    assert res.status_code == 200
+    status = res.get_json()["data"][0]
+    assert status["attempted"] is True
+    assert status["is_correct"] is True
+
+
+def test_today_quiz_status_after_correct_then_wrong(client, test_user, test_admin_user):
+    """이전에 정답을 맞춘 경우 오답을 제출해도 정답 상태 유지"""
+    admin_headers = get_admin_headers(
+        get_admin_jwt_token(test_admin_user, "admin", "admin@example.com")
+    )
+    user_headers = get_auth_headers(
+        get_test_jwt_token(test_user, "testuser", "test@example.com")
+    )
+
+    today = date.today().isoformat()
+    res = client.post(
+        "/admin/quizzes",
+        json={
+            "question": "오늘의 문제?",
+            "correct_answer": "정답",
+            "answers": ["정답", "오답"],
+            "hint_link": "http://hint.com",
+            "explanation": "오늘의 해설",
+            "display_date": today,
+        },
+        headers=admin_headers,
+    )
+    assert res.status_code == 201
+    quiz_id = res.get_json()["data"]["id"]
+
+    # 첫 시도에서 정답을 맞춤
+    res = client.post(
+        f"/quizzes/{quiz_id}/attempt",
+        json={"answer": "정답"},
+        headers=user_headers,
+    )
+    assert res.status_code == 200
+
+    # 두 번째 시도에서 오답 제출
+    res = client.post(
+        f"/quizzes/{quiz_id}/attempt",
+        json={"answer": "오답"},
+        headers=user_headers,
+    )
+    assert res.status_code == 200
+
     res = client.get("/quizzes/today/status", headers=user_headers)
     assert res.status_code == 200
     status = res.get_json()["data"][0]
