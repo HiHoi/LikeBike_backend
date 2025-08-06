@@ -282,7 +282,7 @@ def verify_course_recommendation(rec_id: int):
                     rec_id,
                     0,
                     points,
-                    "코스 추천",
+                    "자전거 코스 추천",
                 ),
             )
 

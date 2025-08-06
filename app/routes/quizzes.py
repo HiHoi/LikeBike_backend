@@ -582,7 +582,7 @@ def attempt_quiz(quiz_id):
                 (user_id, source_type, source_id, points, experience_points, reward_reason)
                 VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                (user_id, "quiz", quiz_id, 0, exp, "퀴즈 정답"),
+                (user_id, "quiz", quiz_id, 0, exp, "자전거 안전 퀴즈"),
             )
 
             reward_given = True
