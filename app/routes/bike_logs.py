@@ -593,7 +593,7 @@ def verify_bike_log(log_id):
                     log_id,
                     0,
                     points,
-                    "자전거 활동 검증 완료",
+                    "자전거 활동",
                     "completed",
                 ),
             )
