@@ -75,7 +75,10 @@ def upload_file_to_ncp(file, folder_name="bike_logs"):
             file,
             NCP_BUCKET_NAME,
             object_key,
-            ExtraArgs={"ContentType": file.content_type or "application/octet-stream"},
+            ExtraArgs={
+                "ContentType": file.content_type or "application/octet-stream",
+                'ACL': 'public-read'
+            },
         )
 
         # 업로드된 파일의 URL 생성

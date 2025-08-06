@@ -563,7 +563,7 @@ def attempt_quiz(quiz_id):
         # 정답이고 처음 맞춘 경우 보상 지급
         reward_given = False
         if is_correct and not already_correct:
-            exp = 5  # 퀴즈 정답 시 5경험치
+            exp = 10  # 퀴즈 정답 시 5경험치
 
             # 경험치 업데이트
             cur.execute(
