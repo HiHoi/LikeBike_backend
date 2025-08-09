@@ -526,7 +526,7 @@ def verify_bike_log(log_id):
     data = request.get_json() or {}
     status = data.get("status")
     admin_notes = data.get("admin_notes", "")
-    points = 10  # 자전거 활동 검증 시 지급할 경험치
+    points = 30  # 자전거 활동 검증 시 지급할 경험치
 
     if status not in ["verified", "rejected"]:
         return make_response({"error": "status must be 'verified' or 'rejected'"}, 400)
