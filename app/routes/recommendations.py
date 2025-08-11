@@ -64,7 +64,8 @@ def create_course_recommendation():
         cur.execute(
             "SELECT COUNT(*) as count FROM course_recommendations"
             " WHERE user_id = %s"
-            " AND created_at >= date_trunc('week', CURRENT_DATE)",
+            " AND created_at >= date_trunc('week', CURRENT_DATE)"
+            " AND status != 'rejected'",  # 반려된 것 제외
             (user_id,),
         )
         result = cur.fetchone()
@@ -164,7 +165,8 @@ def week_course_recommendation_count():
     with db.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) as count FROM course_recommendations "
-            "WHERE user_id = %s AND created_at >= date_trunc('week', CURRENT_DATE)",
+            "WHERE user_id = %s AND created_at >= date_trunc('week', CURRENT_DATE) "
+            "AND status != 'rejected'",
             (user_id,),
         )
         result = cur.fetchone()
