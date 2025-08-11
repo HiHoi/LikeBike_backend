@@ -184,7 +184,8 @@ def create_bike_log():
     with db.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) as count FROM bike_usage_logs"
-            " WHERE user_id = %s AND created_at::date = CURRENT_DATE",
+            " WHERE user_id = %s AND created_at::date = CURRENT_DATE"
+            " AND verification_status = 'verified'",
             (user_id,),
         )
         result = cur.fetchone()
@@ -738,7 +739,8 @@ def get_today_bike_log_count():
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "SELECT COUNT(*) as count FROM bike_usage_logs WHERE user_id = %s AND created_at::date = CURRENT_DATE",
+            "SELECT COUNT(*) as count FROM bike_usage_logs WHERE user_id = %s "
+            "AND created_at::date = CURRENT_DATE AND verification_status = 'verified'",
             (user_id,),
         )
         result = cur.fetchone()
