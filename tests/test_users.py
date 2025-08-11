@@ -2,7 +2,7 @@ import pytest
 
 from app import create_app
 from app.db import get_db
-from tests.test_helpers import get_auth_headers, get_test_jwt_token
+from tests.test_helpers import get_admin_headers, get_auth_headers, get_test_jwt_token
 
 
 @pytest.fixture
@@ -137,6 +137,60 @@ def test_withdraw_user(client, monkeypatch):
     headers = {"Authorization": f"Bearer {jwt_token}"}
     res = client.delete("/users/withdraw", headers=headers)
     assert res.status_code == 204
+
+
+def test_admin_delete_user(client, app):
+    """관리자가 특정 사용자를 삭제할 수 있어야 합니다."""
+    # 테스트용 사용자 생성
+    with app.app_context():
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO users (kakao_id, username, email)
+                VALUES (%s, %s, %s) RETURNING id
+                """,
+                ("admin_delete_kakao", "delete_target", "delete_target@test.com"),
+            )
+            user_id = cur.fetchone()["id"]
+
+    # 관리자 토큰으로 삭제 요청
+    headers = get_admin_headers()
+    res = client.delete(f"/admin/users/{user_id}", headers=headers)
+    assert res.status_code == 204
+
+    # 사용자가 실제로 삭제되었는지 확인
+    with app.app_context():
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+            assert cur.fetchone() is None
+
+
+def test_admin_list_users(client, app):
+    """관리자가 모든 사용자를 조회할 수 있어야 합니다."""
+    with app.app_context():
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO users (kakao_id, username, email)
+                VALUES (%s, %s, %s) RETURNING id
+                """,
+                ("admin_list_kakao", "list_target", "list_target@test.com"),
+            )
+            user_id = cur.fetchone()["id"]
+
+    headers = get_admin_headers()
+    res = client.get("/admin/users", headers=headers)
+    assert res.status_code == 200
+    data = res.get_json()["data"]
+    assert any(
+        u["id"] == user_id
+        and u["email"] == "list_target@test.com"
+        and u["username"] == "list_target"
+        for u in data
+    )
 
 
 def test_get_user_profile(client, monkeypatch, app):

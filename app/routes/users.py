@@ -9,6 +9,7 @@ from flask import Blueprint, request
 
 from ..db import get_db
 from ..utils.auth import (
+    admin_required,
     generate_jwt_token,
     get_current_user_id,
     get_token_from_header,
@@ -307,6 +308,29 @@ def delete_user():
 def withdraw_user():
     """사용자가 자신의 계정을 완전히 삭제합니다."""
     user_id = get_current_user_id()
+    deleted = _remove_user(user_id)
+    if deleted == 0:
+        return make_response({"error": "user not found"}, 404)
+
+    return make_response(None, 204)
+
+
+@bp.route("/admin/users", methods=["GET"])
+@admin_required
+def admin_list_users() -> tuple[Any, int]:
+    """관리자가 모든 사용자의 ID, 이메일, 이름을 조회합니다."""
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute("SELECT id, username, email FROM users ORDER BY id")
+        users = cur.fetchall()
+
+    return make_response([dict(u) for u in users])
+
+
+@bp.route("/admin/users/<int:user_id>", methods=["DELETE"])
+@admin_required
+def admin_delete_user(user_id: int):
+    """관리자가 특정 사용자를 삭제합니다."""
     deleted = _remove_user(user_id)
     if deleted == 0:
         return make_response({"error": "user not found"}, 404)
