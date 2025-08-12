@@ -179,13 +179,13 @@ def create_bike_log():
             {"error": "bike_photo and safety_gear_photo required"}, 400
         )
 
-    # 하루 한 번만 인증 가능
+    # 하루 한 번만 인증 가능 (대기 중이거나 승인된 기록이 있으면 제한)
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) as count FROM bike_usage_logs"
             " WHERE user_id = %s AND created_at::date = CURRENT_DATE"
-            " AND verification_status = 'verified'",
+            " AND verification_status != 'rejected'",  # 반려된 것 제외
             (user_id,),
         )
         result = cur.fetchone()
@@ -740,7 +740,7 @@ def get_today_bike_log_count():
     with db.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) as count FROM bike_usage_logs WHERE user_id = %s "
-            "AND created_at::date = CURRENT_DATE AND verification_status = 'verified'",
+            "AND created_at::date = CURRENT_DATE AND verification_status != 'rejected'",
             (user_id,),
         )
         result = cur.fetchone()
