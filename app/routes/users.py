@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from typing import Any, Dict
 
 import aiohttp
+import jwt
 from flask import Blueprint, request
 
 from ..db import get_db
@@ -21,6 +23,7 @@ bp = Blueprint("users", __name__)
 
 KAKAO_REST_API_KEY = os.environ.get("KAKAO_REST_API_KEY")
 KAKAO_REDIRECT_URI = os.environ.get("KAKAO_REDIRECT_URI")
+APPLE_CLIENT_ID = os.environ.get("APPLE_CLIENT_ID")
 
 
 async def fetch_kakao_tokens(code: str) -> dict:
@@ -50,6 +53,31 @@ async def fetch_kakao_user_info(access_token: str) -> dict:
         async with session.get(url, headers=headers) as resp:
             resp.raise_for_status()
             return await resp.json()
+
+
+async def fetch_apple_public_keys() -> Dict[str, Any]:
+    """Retrieve Apple's public keys for token verification."""
+    url = "https://appleid.apple.com/auth/keys"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+
+async def verify_apple_identity_token(identity_token: str) -> Dict[str, Any]:
+    """Verify Apple identity token and return its payload."""
+    jwks = await fetch_apple_public_keys()
+    headers = jwt.get_unverified_header(identity_token)
+    key = next(
+        (k for k in jwks.get("keys", []) if k.get("kid") == headers.get("kid")), None
+    )
+    if not key:
+        raise ValueError("Invalid identity token")
+    public_key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(key))
+    decode_kwargs = {"algorithms": ["RS256"]}
+    if APPLE_CLIENT_ID:
+        decode_kwargs["audience"] = APPLE_CLIENT_ID
+    return jwt.decode(identity_token, public_key, **decode_kwargs)
 
 
 @bp.route("/users", methods=["POST"])
@@ -128,14 +156,18 @@ def register_user():
     """
     data = request.get_json() or {}
     code = data.get("code")
-    if not code:
-        return make_response({"error": "authorization code missing"}, 400)
+    access_token = data.get("access_token")
+    if not access_token and not code:
+        return make_response(
+            {"error": "authorization code or access token missing"}, 400
+        )
 
     try:
-        token_info = asyncio.run(fetch_kakao_tokens(code))
-        access_token = token_info.get("access_token")
         if not access_token:
-            return make_response({"error": "failed to get kakao access token"}, 400)
+            token_info = asyncio.run(fetch_kakao_tokens(code))
+            access_token = token_info.get("access_token")
+            if not access_token:
+                return make_response({"error": "failed to get kakao access token"}, 400)
 
         kakao_user_info = asyncio.run(fetch_kakao_user_info(access_token))
 
@@ -191,6 +223,62 @@ def register_user():
     except Exception as e:
         # TODO: Log the error properly
         return make_response({"error": f"kakao login failed: {str(e)}"}, 500)
+
+
+@bp.route("/users/apple", methods=["POST"])
+def register_user_apple():
+    """Apple OAuth 로그인/등록"""
+    data = request.get_json() or {}
+    identity_token = data.get("identity_token")
+    if not identity_token:
+        return make_response({"error": "identity token missing"}, 400)
+
+    try:
+        token_data = asyncio.run(verify_apple_identity_token(identity_token))
+        apple_id = token_data.get("sub")
+        email = token_data.get("email") or f"{apple_id}@apple"
+        username = token_data.get("name") or email.split("@")[0]
+        profile_image_url = data.get("profile_image_url")
+        oauth_id = f"apple_{apple_id}"
+
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM users WHERE kakao_id = %s",
+                (oauth_id,),
+            )
+            existing = cur.fetchone()
+            if existing:
+                user_id = existing["id"]
+                cur.execute(
+                    "UPDATE users SET username = %s, email = %s, profile_image_url = %s WHERE id = %s",
+                    (username, email, profile_image_url, user_id),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO users (kakao_id, username, email, profile_image_url) VALUES (%s, %s, %s, %s) RETURNING id",
+                    (oauth_id, username, email, profile_image_url),
+                )
+                user_id = cur.fetchone()["id"]
+                cur.execute(
+                    "INSERT INTO user_settings (user_id) VALUES (%s)", (user_id,)
+                )
+
+            jwt_token = generate_jwt_token(user_id, username, email)
+
+        return make_response(
+            {
+                "id": user_id,
+                "username": username,
+                "email": email,
+                "profile_image_url": profile_image_url,
+                "access_token": jwt_token,
+            },
+            201,
+        )
+
+    except Exception as e:
+        return make_response({"error": f"apple login failed: {str(e)}"}, 500)
 
 
 @bp.route("/users/profile", methods=["PUT"])
