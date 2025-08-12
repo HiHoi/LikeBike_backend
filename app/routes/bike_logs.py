@@ -1,9 +1,11 @@
+import csv
+import io
 import os
 import uuid
 
 import boto3
 from botocore.exceptions import ClientError
-from flask import Blueprint, request
+from flask import Blueprint, Response, request
 from werkzeug.utils import secure_filename
 
 from ..db import get_db
@@ -77,7 +79,7 @@ def upload_file_to_ncp(file, folder_name="bike_logs"):
             object_key,
             ExtraArgs={
                 "ContentType": file.content_type or "application/octet-stream",
-                'ACL': 'public-read'
+                "ACL": "public-read",
             },
         )
 
@@ -430,8 +432,8 @@ def get_pending_bike_logs():
     with db.cursor() as cur:
         cur.execute(
             """
-            SELECT bl.id, bl.user_id, u.username, bl.description, 
-                   bl.bike_photo_url, bl.safety_gear_photo_url, 
+            SELECT bl.id, bl.user_id, u.username, bl.description,
+                   bl.bike_photo_url, bl.safety_gear_photo_url,
                    bl.verification_status, bl.points_awarded, bl.admin_notes,
                    bl.started_at, bl.verified_at, bl.created_at
             FROM bike_usage_logs bl
@@ -446,6 +448,113 @@ def get_pending_bike_logs():
         logs = cur.fetchall()
 
     return make_response(logs)
+
+
+@bp.route("/admin/bike-logs/export", methods=["GET"])
+@admin_required
+def export_bike_logs():
+    """자전거 활동 기록 CSV 다운로드 (관리자)
+    ---
+    tags:
+      - Bike Logs
+    summary: 승인 또는 반려된 자전거 활동 기록을 CSV 파일로 다운로드
+    description: 관리자가 승인하거나 반려한 자전거 활동 기록을 CSV 파일로 제공합니다.
+    security:
+      - JWT: []
+      - AdminHeader: []
+    parameters:
+      - in: query
+        name: status
+        type: string
+        required: false
+        description: 필터링할 상태 (verified 또는 rejected)
+    responses:
+      200:
+        description: CSV 파일 반환
+      400:
+        description: 잘못된 요청
+      401:
+        description: 인증 실패
+      403:
+        description: 관리자 권한 필요
+    """
+
+    status = request.args.get("status")
+    allowed_statuses = {"verified", "rejected"}
+    if status and status not in allowed_statuses:
+        return make_response({"error": "status must be 'verified' or 'rejected'"}, 400)
+
+    db = get_db()
+    with db.cursor() as cur:
+        if status:
+            cur.execute(
+                """
+                SELECT bl.id, u.username, bl.description, bl.bike_photo_url,
+                       bl.safety_gear_photo_url, bl.verification_status,
+                       bl.points_awarded, bl.admin_notes,
+                       bl.started_at, bl.verified_at, bl.created_at
+                FROM bike_usage_logs bl
+                JOIN users u ON bl.user_id = u.id
+                WHERE bl.verification_status = %s
+                ORDER BY bl.created_at DESC
+                """,
+                (status,),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT bl.id, u.username, bl.description, bl.bike_photo_url,
+                       bl.safety_gear_photo_url, bl.verification_status,
+                       bl.points_awarded, bl.admin_notes,
+                       bl.started_at, bl.verified_at, bl.created_at
+                FROM bike_usage_logs bl
+                JOIN users u ON bl.user_id = u.id
+                WHERE bl.verification_status IN ('verified', 'rejected')
+                ORDER BY bl.created_at DESC
+                """,
+            )
+
+        rows = cur.fetchall()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "id",
+            "username",
+            "description",
+            "bike_photo_url",
+            "safety_gear_photo_url",
+            "verification_status",
+            "points_awarded",
+            "admin_notes",
+            "started_at",
+            "verified_at",
+            "created_at",
+        ]
+    )
+    for row in rows:
+        writer.writerow(
+            [
+                row["id"],
+                row["username"],
+                row["description"],
+                row["bike_photo_url"],
+                row["safety_gear_photo_url"],
+                row["verification_status"],
+                row["points_awarded"],
+                row["admin_notes"],
+                row["started_at"],
+                row["verified_at"],
+                row["created_at"],
+            ]
+        )
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=bike_logs.csv"},
+    )
 
 
 @bp.route("/admin/bike-logs/<int:log_id>/verify", methods=["POST"])
@@ -530,7 +639,6 @@ def verify_bike_log(log_id):
 
     if status not in ["verified", "rejected"]:
         return make_response({"error": "status must be 'verified' or 'rejected'"}, 400)
-
 
     admin_id = get_current_user_id()
 

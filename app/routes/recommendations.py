@@ -1,4 +1,7 @@
-from flask import Blueprint, request
+import csv
+import io
+
+from flask import Blueprint, Response, request
 
 from ..db import get_db
 from ..utils.auth import admin_required, get_current_user_id, jwt_required
@@ -316,3 +319,106 @@ def list_all_course_recommendations():
         cur.execute("SELECT * FROM course_recommendations ORDER BY created_at DESC")
         rows = cur.fetchall()
     return make_response([dict(row) for row in rows])
+
+
+@bp.route("/admin/course-recommendations/export", methods=["GET"])
+@admin_required
+def export_course_recommendations():
+    """코스 추천 이력 CSV 다운로드 (관리자)
+    ---
+    tags:
+      - Course Recommendations
+    summary: 승인 또는 반려된 코스 추천 이력을 CSV 파일로 다운로드
+    description: 관리자가 승인하거나 반려한 코스 추천 이력을 CSV 형식으로 제공합니다.
+    security:
+      - JWT: []
+      - AdminHeader: []
+    parameters:
+      - in: query
+        name: status
+        type: string
+        required: false
+        description: 필터링할 상태 (verified 또는 rejected)
+    responses:
+      200:
+        description: CSV 파일 반환
+      400:
+        description: 잘못된 요청
+      401:
+        description: 인증 실패
+      403:
+        description: 관리자 권한 필요
+    """
+
+    status = request.args.get("status")
+    allowed_statuses = {"verified", "rejected"}
+    if status and status not in allowed_statuses:
+        return make_response({"error": "status must be 'verified' or 'rejected'"}, 400)
+
+    db = get_db()
+    with db.cursor() as cur:
+        if status:
+            cur.execute(
+                """
+                SELECT cr.id, u.username, cr.location_name, cr.photo_url,
+                       cr.review, cr.status, cr.points_awarded,
+                       cr.reviewed_at, cr.created_at
+                FROM course_recommendations cr
+                JOIN users u ON cr.user_id = u.id
+                WHERE cr.status = %s
+                ORDER BY cr.created_at DESC
+                """,
+                (status,),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT cr.id, u.username, cr.location_name, cr.photo_url,
+                       cr.review, cr.status, cr.points_awarded,
+                       cr.reviewed_at, cr.created_at
+                FROM course_recommendations cr
+                JOIN users u ON cr.user_id = u.id
+                WHERE cr.status IN ('verified', 'rejected')
+                ORDER BY cr.created_at DESC
+                """,
+            )
+
+        rows = cur.fetchall()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "id",
+            "username",
+            "location_name",
+            "photo_url",
+            "review",
+            "status",
+            "points_awarded",
+            "reviewed_at",
+            "created_at",
+        ]
+    )
+    for row in rows:
+        writer.writerow(
+            [
+                row["id"],
+                row["username"],
+                row["location_name"],
+                row["photo_url"],
+                row["review"],
+                row["status"],
+                row["points_awarded"],
+                row["reviewed_at"],
+                row["created_at"],
+            ]
+        )
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=course_recommendations.csv"
+        },
+    )
