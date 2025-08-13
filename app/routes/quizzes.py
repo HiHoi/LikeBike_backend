@@ -8,6 +8,7 @@ from flask import Blueprint, request
 from ..db import get_db
 from ..utils.auth import admin_required, get_current_user_id, jwt_required
 from ..utils.responses import make_response
+from ..utils.timezone import get_kst_today
 
 bp = Blueprint("quizzes", __name__)
 
@@ -131,7 +132,7 @@ def create_quiz():
     answers = data.get("answers", [])  # 선택지 배열
     hint_link = data.get("hint_link")
     explanation = data.get("explanation")
-    display_date = data.get("display_date") or date.today()
+    display_date = data.get("display_date") or get_kst_today()
 
     # display_date가 문자열인 경우 date 객체로 변환
     if isinstance(display_date, str):
@@ -141,7 +142,7 @@ def create_quiz():
             try:
                 display_date = datetime.strptime(display_date, "%Y-%m-%d").date()
             except ValueError:
-                display_date = date.today()
+                display_date = get_kst_today()
 
     if not question or not correct_answer:
         return make_response({"error": "question and correct_answer required"}, 400)
@@ -444,7 +445,7 @@ def today_quiz_status():
         description: 인증 실패
     """
     user_id = get_current_user_id()
-    today = date.today()
+    today = get_kst_today()
     db = get_db()
     with db.cursor() as cur:
         cur.execute("SELECT id FROM quizzes WHERE display_date = %s", (today,))

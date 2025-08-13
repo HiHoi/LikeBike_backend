@@ -11,6 +11,7 @@ from werkzeug.utils import secure_filename
 from ..db import get_db
 from ..utils.auth import admin_required, get_current_user_id, jwt_required
 from ..utils.responses import make_response
+from ..utils.timezone import get_kst_date_range_for_today
 
 bp = Blueprint("bike_logs", __name__)
 
@@ -181,13 +182,16 @@ def create_bike_log():
             {"error": "bike_photo and safety_gear_photo required"}, 400
         )
 
-    # 하루 한 번만 인증 가능
+    # 하루 한 번만 인증 가능 (대기 중이거나 승인된 기록이 있으면 제한)
     db = get_db()
+    start_of_day_utc, end_of_day_utc = get_kst_date_range_for_today()
+    
     with db.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) as count FROM bike_usage_logs"
-            " WHERE user_id = %s AND created_at::date = CURRENT_DATE",
-            (user_id,),
+            " WHERE user_id = %s AND created_at >= %s AND created_at < %s"
+            " AND verification_status != 'rejected'",  # 반려된 것 제외
+            (user_id, start_of_day_utc, end_of_day_utc),
         )
         result = cur.fetchone()
         if result and result["count"] >= 1:
@@ -842,12 +846,14 @@ def get_today_bike_log_count():
         description: 인증 실패
     """
     user_id = get_current_user_id()
+    start_of_day_utc, end_of_day_utc = get_kst_date_range_for_today()
 
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "SELECT COUNT(*) as count FROM bike_usage_logs WHERE user_id = %s AND created_at::date = CURRENT_DATE",
-            (user_id,),
+            "SELECT COUNT(*) as count FROM bike_usage_logs WHERE user_id = %s "
+            "AND created_at >= %s AND created_at < %s AND verification_status != 'rejected'",
+            (user_id, start_of_day_utc, end_of_day_utc),
         )
         result = cur.fetchone()
         count = result["count"] if result else 0
