@@ -417,8 +417,6 @@ def test_verify_bike_log_invalid_status(client, admin_user):
     )
 
 
-
-
 def test_verify_bike_log_not_found(client, admin_user):
     """존재하지 않는 활동 기록 검증 테스트"""
     admin_token = get_test_jwt_token(
@@ -550,3 +548,26 @@ def test_get_today_bike_log_count(mock_upload, client, test_user):
     res = client.get("/users/bike-logs/today/count", headers=headers)
     assert res.status_code == 200
     assert res.get_json()["data"][0]["count"] == 1
+
+
+def test_export_bike_logs_csv(client, app, test_user):
+    with app.app_context():
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute(
+                "INSERT INTO bike_usage_logs (user_id, description, verification_status) VALUES (%s, %s, %s)",
+                (test_user, "test ride", "verified"),
+            )
+            cur.execute(
+                "INSERT INTO bike_usage_logs (user_id, description, verification_status) VALUES (%s, %s, %s)",
+                (test_user, "another ride", "pending"),
+            )
+
+    res = client.get("/admin/bike-logs/export", headers=get_admin_headers())
+    assert res.status_code == 200
+    assert res.headers["Content-Type"].startswith("text/csv")
+    content = res.data.decode()
+    lines = [line for line in content.strip().split("\n") if line]
+    assert len(lines) == 2  # header + 1 verified record
+    assert "verified" in lines[1]
+    assert "pending" not in content

@@ -5,8 +5,7 @@ import pytest
 
 from app import create_app
 from app.db import get_db
-from tests.test_helpers import (get_admin_headers, get_auth_headers,
-                                get_test_jwt_token)
+from tests.test_helpers import get_admin_headers, get_auth_headers, get_test_jwt_token
 
 
 @pytest.fixture
@@ -232,3 +231,28 @@ def test_week_recommendation_count(mock_upload, client, test_user):
     res = client.get("/users/course-recommendations/week/count", headers=headers)
     assert res.status_code == 200
     assert res.get_json()["data"][0]["count"] == 1
+
+
+def test_export_course_recommendations_csv(client, app, test_user):
+    with app.app_context():
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute(
+                "INSERT INTO course_recommendations (user_id, location_name, review, status) VALUES (%s, %s, %s, %s)",
+                (test_user, "한강", "굿", "verified"),
+            )
+            cur.execute(
+                "INSERT INTO course_recommendations (user_id, location_name, review, status) VALUES (%s, %s, %s, %s)",
+                (test_user, "잠실", "보통", "pending"),
+            )
+
+    res = client.get(
+        "/admin/course-recommendations/export", headers=get_admin_headers()
+    )
+    assert res.status_code == 200
+    assert res.headers["Content-Type"].startswith("text/csv")
+    content = res.data.decode()
+    lines = [line for line in content.strip().split("\n") if line]
+    assert len(lines) == 2
+    assert "verified" in lines[1]
+    assert "pending" not in content
