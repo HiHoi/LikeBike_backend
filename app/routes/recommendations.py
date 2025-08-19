@@ -344,7 +344,7 @@ def list_all_course_recommendations():
     tags:
       - Course Recommendations
     summary: 모든 코스 추천 목록 조회
-    description: 관리자가 제출된 모든 코스 추천을 최신순으로 조회합니다.
+    description: 관리자가 제출된 모든 코스 추천을 최신순으로 조회합니다. 각 추천에는 요청한 사용자의 username이 포함됩니다.
     security:
       - JWT: []
       - AdminHeader: []
@@ -376,8 +376,10 @@ def list_all_course_recommendations():
     with db.cursor() as cur:
         cur.execute(
             """
-            SELECT * FROM course_recommendations
-            ORDER BY created_at DESC
+            SELECT cr.*, u.username
+            FROM course_recommendations AS cr
+            JOIN users AS u ON cr.user_id = u.id
+            ORDER BY cr.created_at DESC
             LIMIT %s OFFSET %s
             """,
             (limit, offset),

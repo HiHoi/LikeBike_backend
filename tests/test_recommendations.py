@@ -199,6 +199,7 @@ def test_admin_list_all_recommendations(mock_upload, client, test_user, admin_us
     assert res.status_code == 200
     data = res.get_json()["data"]
     assert len(data) >= 1
+    assert any(rec["username"] == "testuser" for rec in data)
 
 
 def test_admin_list_requires_privileges(client, test_user):
