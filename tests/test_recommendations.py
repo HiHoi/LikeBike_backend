@@ -210,6 +210,29 @@ def test_admin_list_requires_privileges(client, test_user):
     assert res.status_code in (401, 403)
 
 
+def test_admin_course_recommendations_pagination(client, app, admin_user, test_user):
+    """관리자 코스 추천 목록 페이지네이션 테스트"""
+
+    with app.app_context():
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute("DELETE FROM course_recommendations")
+            for i in range(3):
+                cur.execute(
+                    "INSERT INTO course_recommendations (user_id, location_name, review) VALUES (%s, %s, %s)",
+                    (test_user, f"장소{i}", f"리뷰{i}"),
+                )
+
+    token = get_test_jwt_token(admin_user, "admin", "admin@example.com", is_admin=True)
+    headers = get_admin_headers(token)
+
+    res = client.get("/admin/course-recommendations?limit=1&offset=1", headers=headers)
+    assert res.status_code == 200
+    data = res.get_json()["data"]
+    assert len(data) == 1
+    assert data[0]["location_name"] == "장소1"
+
+
 @patch("app.routes.recommendations.upload_file_to_ncp")
 def test_week_recommendation_count(mock_upload, client, test_user):
     mock_upload.return_value = ("https://test.com/photo.jpg", None)

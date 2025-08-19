@@ -348,6 +348,19 @@ def list_all_course_recommendations():
     security:
       - JWT: []
       - AdminHeader: []
+    parameters:
+      - in: query
+        name: limit
+        type: integer
+        required: false
+        description: 조회할 추천 개수 (기본값 50)
+        default: 50
+      - in: query
+        name: offset
+        type: integer
+        required: false
+        description: 건너뛸 추천 개수 (기본값 0)
+        default: 0
     responses:
       200:
         description: 코스 추천 목록 조회 성공
@@ -356,10 +369,21 @@ def list_all_course_recommendations():
       403:
         description: 관리자 권한 필요
     """
+    limit = int(request.args.get("limit", 50))
+    offset = int(request.args.get("offset", 0))
+
     db = get_db()
     with db.cursor() as cur:
-        cur.execute("SELECT * FROM course_recommendations ORDER BY created_at DESC")
+        cur.execute(
+            """
+            SELECT * FROM course_recommendations
+            ORDER BY created_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            (limit, offset),
+        )
         rows = cur.fetchall()
+
     return make_response([dict(row) for row in rows])
 
 

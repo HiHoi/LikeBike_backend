@@ -297,6 +297,29 @@ def test_get_pending_bike_logs_non_admin(client, test_user):
     assert res.status_code == 403
 
 
+def test_admin_bike_logs_pagination(client, app, admin_user, test_user):
+    """관리자 자전거 활동 기록 페이지네이션 테스트"""
+
+    with app.app_context():
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute("DELETE FROM bike_usage_logs")
+            for i in range(3):
+                cur.execute(
+                    "INSERT INTO bike_usage_logs (user_id, description) VALUES (%s, %s)",
+                    (test_user, f"log{i}"),
+                )
+
+    token = get_test_jwt_token(admin_user, "admin", "admin@example.com", is_admin=True)
+    headers = get_admin_headers(token)
+
+    res = client.get("/admin/bike-logs?limit=1&offset=1", headers=headers)
+    assert res.status_code == 200
+    data = res.get_json()["data"]
+    assert len(data) == 1
+    assert data[0]["description"] == "log1"
+
+
 @patch("app.routes.bike_logs.upload_file_to_ncp")
 def test_verify_bike_log_success(mock_upload, client, test_user, admin_user):
     """활동 기록 검증 성공 테스트"""
