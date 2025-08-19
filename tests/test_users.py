@@ -391,3 +391,62 @@ def test_update_user_score_records_reward(client, monkeypatch, app):
     assert rewards[0]["user_id"] == user_id
     assert rewards[0]["experience_points"] == 10
     assert rewards[0]["reward_reason"] == "테스트 경험치"
+
+
+def test_admin_get_user_activities(client, app):
+    headers = get_admin_headers()
+
+    with app.app_context():
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO users (kakao_id, username, email)
+                VALUES (%s, %s, %s) RETURNING id
+                """,
+                ("kakao1", "user1", "user1@example.com"),
+            )
+            user_id = cur.fetchone()["id"]
+
+            cur.execute(
+                """
+                INSERT INTO quizzes (question, correct_answer, answers)
+                VALUES (%s, %s, %s) RETURNING id
+                """,
+                ("Q1", "A", ["A", "B"]),
+            )
+            quiz_id = cur.fetchone()["id"]
+
+            cur.execute(
+                """
+                INSERT INTO bike_usage_logs (user_id, description, created_at)
+                VALUES (%s, %s, %s)
+                """,
+                (user_id, "ride", "2024-01-01"),
+            )
+
+            cur.execute(
+                """
+                INSERT INTO community_posts (user_id, title, content, created_at)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (user_id, "t", "c", "2024-01-01"),
+            )
+
+            cur.execute(
+                """
+                INSERT INTO user_quiz_attempts (user_id, quiz_id, is_correct, attempted_at)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (user_id, quiz_id, True, "2024-01-02"),
+            )
+
+    res = client.get(f"/admin/users/{user_id}/activities", headers=headers)
+    assert res.status_code == 200
+    data = res.get_json()["data"]
+    assert data[0]["date"] == "2024-01-01"
+    assert data[0]["bike_logs"] == 1
+    assert data[0]["posts"] == 1
+    assert data[0]["quiz_attempts"] == 0
+    assert data[1]["date"] == "2024-01-02"
+    assert data[1]["quiz_attempts"] == 1
