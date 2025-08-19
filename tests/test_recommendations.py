@@ -116,13 +116,19 @@ def test_verify_recommendation(mock_upload, client, test_user, admin_user):
 
     res = client.post(
         f"/admin/course-recommendations/{rec_id}/verify",
-        json={"status": "approved", "points": 5},
+        json={
+            "status": "verified",
+            "points": 5,
+            "admin_notes": "좋은 코스",
+        },
         headers=admin_headers,
     )
     assert res.status_code == 200
     data = res.get_json()["data"][0]
-    assert data["status"] == "approved"
+    assert data["status"] == "verified"
     assert data["points_awarded"] == 5
+    assert data["admin_notes"] == "좋은 코스"
+    assert data["user_id"] == test_user
 
 
 @patch("app.routes.recommendations.upload_file_to_ncp")

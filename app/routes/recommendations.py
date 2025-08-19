@@ -214,9 +214,43 @@ def verify_course_recommendation(rec_id: int):
               type: integer
               description: 승인 시 지급할 포인트
               example: 5
+            admin_notes:
+              type: string
+              description: 관리자 메모
+              example: "훌륭한 코스"
     responses:
       200:
         description: 코스 추천 검토 성공
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+              example: 200
+            message:
+              type: string
+              example: "OK"
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 1
+                user_id:
+                  type: integer
+                  example: 2
+                status:
+                  type: string
+                  example: verified
+                points_awarded:
+                  type: integer
+                  example: 5
+                admin_notes:
+                  type: string
+                  example: "훌륭한 코스"
+                reviewed_at:
+                  type: string
+                  example: "2024-01-01T10:00:00Z"
       400:
         description: 잘못된 요청
       401:
@@ -229,6 +263,7 @@ def verify_course_recommendation(rec_id: int):
     data = request.get_json() or {}
     status = data.get("status")
     points = data.get("points", 0)
+    admin_notes = data.get("admin_notes", "")
 
     if status not in ["verified", "rejected"]:
         return make_response({"error": "status must be 'verified' or 'rejected'"}, 400)
@@ -258,11 +293,18 @@ def verify_course_recommendation(rec_id: int):
             SET status = %s,
                 points_awarded = %s,
                 reviewed_by_admin_id = %s,
+                admin_notes = %s,
                 reviewed_at = CURRENT_TIMESTAMP
             WHERE id = %s
-            RETURNING id, status, points_awarded, reviewed_at
+            RETURNING id, user_id, status, points_awarded, admin_notes, reviewed_at
             """,
-            (status, points if status == "verified" else 0, admin_id, rec_id),
+            (
+                status,
+                points if status == "verified" else 0,
+                admin_id,
+                admin_notes,
+                rec_id,
+            ),
         )
         updated = cur.fetchone()
 
