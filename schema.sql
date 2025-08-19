@@ -250,6 +250,7 @@ CREATE TABLE course_recommendations (
     status VARCHAR(50) DEFAULT 'pending',
     points_awarded INTEGER DEFAULT 0,
     reviewed_by_admin_id INTEGER,
+    admin_notes TEXT,
     reviewed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,

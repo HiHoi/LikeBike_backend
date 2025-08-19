@@ -91,6 +91,20 @@ erDiagram
         timestamp created_at
     }
 
+    course_recommendations {
+        integer id PK
+        integer user_id FK
+        varchar location_name
+        varchar photo_url
+        text review
+        varchar status
+        integer points_awarded
+        integer reviewed_by_admin_id FK
+        text admin_notes
+        timestamp reviewed_at
+        timestamp created_at
+    }
+
     routes {
         integer id PK
         integer user_id FK
@@ -184,6 +198,8 @@ erDiagram
     users ||--o{ user_quiz_explanation_views : ""
     users ||--o{ bike_usage_logs : "creates"
     users ||--o{ bike_usage_logs : "verifies as admin"
+    users ||--o{ course_recommendations : "recommends"
+    users ||--o{ course_recommendations : "reviews as admin"
     users ||--o{ routes : ""
     users ||--o{ rewards : ""
     users ||--o{ community_posts : "writes"
@@ -246,6 +262,7 @@ erDiagram
 ### 7. 코스 추천 기능
 - **course_recommendations**: 사용자가 추천한 코스와 관리자 검토 내역을 관리합니다.
   - 사용자는 주 2회까지만 추천 가능
+  - 관리자 검토 시 admin_notes 기록 가능
 
 이 ERD는 앱 플로우의 실제 기능에 맞춰:
 
