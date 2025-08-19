@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections import defaultdict
 from typing import Any, Dict
 
 import aiohttp
@@ -325,6 +326,115 @@ def admin_list_users() -> tuple[Any, int]:
         users = cur.fetchall()
 
     return make_response([dict(u) for u in users])
+
+
+@bp.route("/admin/users/<int:user_id>/activities", methods=["GET"])
+@admin_required
+def admin_get_user_activities(user_id: int):
+    """
+    특정 사용자의 날짜별 활동 기록을 조회합니다.
+    ---
+    tags:
+      - Admin
+    summary: 사용자 날짜별 활동 조회
+    description: 관리자가 선택한 사용자의 날짜별 활동 기록을 조회합니다.
+    parameters:
+      - in: path
+        name: user_id
+        type: integer
+        required: true
+      - in: query
+        name: start_date
+        type: string
+        format: date
+        required: false
+      - in: query
+        name: end_date
+        type: string
+        format: date
+        required: false
+    responses:
+      200:
+        description: 활동 기록 목록
+        schema:
+          type: object
+          properties:
+            code:
+              type: integer
+            message:
+              type: string
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  date:
+                    type: string
+                    example: "2024-01-01"
+                  bike_logs:
+                    type: integer
+                    example: 1
+                  posts:
+                    type: integer
+                    example: 2
+                  quiz_attempts:
+                    type: integer
+                    example: 3
+      401:
+        description: 인증 실패
+      403:
+        description: 관리자 권한 필요
+    """
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+
+    db = get_db()
+    activities: Dict[str, Dict[str, Any]] = defaultdict(
+        lambda: {"date": "", "bike_logs": 0, "posts": 0, "quiz_attempts": 0}
+    )
+
+    with db.cursor() as cur:
+
+        def fetch(table: str, column: str):
+            params: list[Any] = [user_id]
+            filters = ""
+            if start_date:
+                filters += f" AND DATE({column}) >= %s"
+                params.append(start_date)
+            if end_date:
+                filters += f" AND DATE({column}) <= %s"
+                params.append(end_date)
+            cur.execute(
+                f"""
+                SELECT DATE({column}) AS date, COUNT(*) AS count
+                FROM {table}
+                WHERE user_id = %s{filters}
+                GROUP BY date
+                """,
+                params,
+            )
+            return cur.fetchall()
+
+        for row in fetch("bike_usage_logs", "created_at"):
+            date_str = row["date"].isoformat()
+            entry = activities[date_str]
+            entry["date"] = date_str
+            entry["bike_logs"] = row["count"]
+
+        for row in fetch("community_posts", "created_at"):
+            date_str = row["date"].isoformat()
+            entry = activities[date_str]
+            entry["date"] = date_str
+            entry["posts"] = row["count"]
+
+        for row in fetch("user_quiz_attempts", "attempted_at"):
+            date_str = row["date"].isoformat()
+            entry = activities[date_str]
+            entry["date"] = date_str
+            entry["quiz_attempts"] = row["count"]
+
+    data = sorted(activities.values(), key=lambda x: x["date"])
+    return make_response(data)
 
 
 @bp.route("/admin/users/<int:user_id>", methods=["DELETE"])
