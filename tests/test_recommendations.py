@@ -5,8 +5,7 @@ import pytest
 
 from app import create_app
 from app.db import get_db
-from tests.test_helpers import (get_admin_headers, get_auth_headers,
-                                get_test_jwt_token)
+from tests.test_helpers import get_admin_headers, get_auth_headers, get_test_jwt_token
 
 
 @pytest.fixture
@@ -117,13 +116,19 @@ def test_verify_recommendation(mock_upload, client, test_user, admin_user):
 
     res = client.post(
         f"/admin/course-recommendations/{rec_id}/verify",
-        json={"status": "approved", "points": 5},
+        json={
+            "status": "verified",
+            "points": 5,
+            "admin_notes": "좋은 코스",
+        },
         headers=admin_headers,
     )
     assert res.status_code == 200
     data = res.get_json()["data"][0]
-    assert data["status"] == "approved"
+    assert data["status"] == "verified"
     assert data["points_awarded"] == 5
+    assert data["admin_notes"] == "좋은 코스"
+    assert data["user_id"] == test_user
 
 
 @patch("app.routes.recommendations.upload_file_to_ncp")
@@ -194,6 +199,7 @@ def test_admin_list_all_recommendations(mock_upload, client, test_user, admin_us
     assert res.status_code == 200
     data = res.get_json()["data"]
     assert len(data) >= 1
+    assert any(rec["username"] == "testuser" for rec in data)
 
 
 def test_admin_list_requires_privileges(client, test_user):
@@ -203,6 +209,29 @@ def test_admin_list_requires_privileges(client, test_user):
 
     res = client.get("/admin/course-recommendations", headers=headers)
     assert res.status_code in (401, 403)
+
+
+def test_admin_course_recommendations_pagination(client, app, admin_user, test_user):
+    """관리자 코스 추천 목록 페이지네이션 테스트"""
+
+    with app.app_context():
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute("DELETE FROM course_recommendations")
+            for i in range(3):
+                cur.execute(
+                    "INSERT INTO course_recommendations (user_id, location_name, review) VALUES (%s, %s, %s)",
+                    (test_user, f"장소{i}", f"리뷰{i}"),
+                )
+
+    token = get_test_jwt_token(admin_user, "admin", "admin@example.com", is_admin=True)
+    headers = get_admin_headers(token)
+
+    res = client.get("/admin/course-recommendations?limit=1&offset=1", headers=headers)
+    assert res.status_code == 200
+    data = res.get_json()["data"]
+    assert len(data) == 1
+    assert data[0]["location_name"] == "장소1"
 
 
 @patch("app.routes.recommendations.upload_file_to_ncp")
@@ -232,3 +261,28 @@ def test_week_recommendation_count(mock_upload, client, test_user):
     res = client.get("/users/course-recommendations/week/count", headers=headers)
     assert res.status_code == 200
     assert res.get_json()["data"][0]["count"] == 1
+
+
+def test_export_course_recommendations_csv(client, app, test_user):
+    with app.app_context():
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute(
+                "INSERT INTO course_recommendations (user_id, location_name, review, status) VALUES (%s, %s, %s, %s)",
+                (test_user, "한강", "굿", "verified"),
+            )
+            cur.execute(
+                "INSERT INTO course_recommendations (user_id, location_name, review, status) VALUES (%s, %s, %s, %s)",
+                (test_user, "잠실", "보통", "pending"),
+            )
+
+    res = client.get(
+        "/admin/course-recommendations/export", headers=get_admin_headers()
+    )
+    assert res.status_code == 200
+    assert res.headers["Content-Type"].startswith("text/csv")
+    content = res.data.decode()
+    lines = [line for line in content.strip().split("\n") if line]
+    assert len(lines) == 2
+    assert "verified" in lines[1]
+    assert "pending" not in content
