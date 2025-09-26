@@ -70,8 +70,9 @@ CREATE TABLE user_verifications (
 CREATE TABLE quizzes (
     id SERIAL PRIMARY KEY,
     question TEXT NOT NULL,
+    quizzes_type VARCHAR(100) NOT NULL, -- OX, 객관식, 단답식
     correct_answer TEXT NOT NULL,
-    answers TEXT[], -- PostgreSQL array for multiple choice answers
+    answers TEXT[],
     hint_link VARCHAR(512),
     explanation TEXT,
     display_date DATE DEFAULT CURRENT_DATE,
@@ -241,21 +242,31 @@ CREATE TABLE safety_reports (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
+
 CREATE TABLE course_recommendations (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL,
-    location_name VARCHAR(255) NOT NULL,
-    photo_url VARCHAR(512),
-    review TEXT NOT NULL,
+    course_name VARCHAR(255) NOT NULL,
+    description TEXT,
     status VARCHAR(50) DEFAULT 'pending',
     points_awarded INTEGER DEFAULT 0,
     reviewed_by_admin_id INTEGER,
+    admin_notes TEXT,
     reviewed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
     FOREIGN KEY (reviewed_by_admin_id) REFERENCES users (id) ON DELETE SET NULL
 );
 
+CREATE TABLE course_waypoints (
+    id SERIAL PRIMARY KEY,
+    course_id INTEGER NOT NULL,
+    sequence_order INTEGER NOT NULL,
+    waypoint_name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (course_id) REFERENCES course_recommendations (id) ON DELETE CASCADE
+);
 
 -- 즐겨찾기
 CREATE TABLE favorites (

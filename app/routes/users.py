@@ -26,6 +26,7 @@ KAKAO_REDIRECT_URI = os.environ.get("KAKAO_REDIRECT_URI")
 
 async def fetch_kakao_tokens(code: str) -> dict:
     """Exchange authorization code for access and refresh tokens."""
+    print(KAKAO_REST_API_KEY, KAKAO_REDIRECT_URI)
     url = "https://kauth.kakao.com/oauth/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded;charset=utf-8"}
     data = {

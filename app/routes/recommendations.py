@@ -211,6 +211,10 @@ def verify_course_recommendation(rec_id: int):
               type: integer
               description: 승인 시 지급할 포인트
               example: 5
+            admin_notes:
+              type: string
+              description: 관리자 메모
+              example: "좋은 코스 추천입니다"
     responses:
       200:
         description: 코스 추천 검토 성공
@@ -226,6 +230,7 @@ def verify_course_recommendation(rec_id: int):
     data = request.get_json() or {}
     status = data.get("status")
     points = data.get("points", 0)
+    admin_notes = data.get("admin_notes", "")
 
     if status not in ["verified", "rejected"]:
         return make_response({"error": "status must be 'verified' or 'rejected'"}, 400)
@@ -255,11 +260,12 @@ def verify_course_recommendation(rec_id: int):
             SET status = %s,
                 points_awarded = %s,
                 reviewed_by_admin_id = %s,
+                admin_notes = %s,
                 reviewed_at = CURRENT_TIMESTAMP
             WHERE id = %s
-            RETURNING id, status, points_awarded, reviewed_at
+            RETURNING id, status, points_awarded, admin_notes, reviewed_at
             """,
-            (status, points if status == "verified" else 0, admin_id, rec_id),
+            (status, points if status == "verified" else 0, admin_id, admin_notes, rec_id),
         )
         updated = cur.fetchone()
 
@@ -313,6 +319,15 @@ def list_all_course_recommendations():
     """
     db = get_db()
     with db.cursor() as cur:
-        cur.execute("SELECT * FROM course_recommendations ORDER BY created_at DESC")
+        cur.execute(
+            """
+            SELECT cr.id, cr.user_id, u.username, cr.location_name, 
+                   cr.photo_url, cr.review, cr.status, cr.points_awarded, 
+                   cr.admin_notes, cr.reviewed_by_admin_id, cr.reviewed_at, cr.created_at
+            FROM course_recommendations cr
+            JOIN users u ON cr.user_id = u.id
+            ORDER BY cr.created_at DESC
+        """
+        )
         rows = cur.fetchall()
     return make_response([dict(row) for row in rows])
