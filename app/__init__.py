@@ -78,6 +78,7 @@ def create_app(test_config=None):
                     "http://127.0.0.1:3001",
                     "https://likebike-admin.vercel.app",
                     "https://port-0-likebike-mc4iz1js1403f457.sel5.cloudtype.app",
+                    "https://port-next-likebike-front-mfv6y0z74a620452.sel3.cloudtype.app",
                     "https://like-bike-front.vercel.app",
                     "http://192.168.0.215:3000",
                 ],
