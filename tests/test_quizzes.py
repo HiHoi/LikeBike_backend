@@ -166,6 +166,82 @@ def test_user_attempt_quiz(client, test_user, test_admin_user):
     assert res.get_json()["data"]["is_correct"] is False
 
 
+def test_ox_quiz_attempt(client, test_user, test_admin_user):
+    admin_headers = get_admin_headers(
+        get_admin_jwt_token(test_admin_user, "admin", "admin@example.com")
+    )
+    user_headers = get_auth_headers(
+        get_test_jwt_token(test_user, "testuser", "test@example.com")
+    )
+
+    res = client.post(
+        "/admin/quizzes",
+        json={
+            "question": "안전모를 써야 한다",
+            "quiz_type": "ox",
+            "correct_answer": "O",
+            "answers": ["O", "X"],
+            "explanation": "안전모는 필수입니다.",
+        },
+        headers=admin_headers,
+    )
+    quiz_id = res.get_json()["data"]["id"]
+
+    res = client.post(
+        f"/quizzes/{quiz_id}/attempt",
+        json={"answer": "o"},
+        headers=user_headers,
+    )
+    assert res.status_code == 200
+    assert res.get_json()["data"]["is_correct"] is True
+
+    res = client.post(
+        f"/quizzes/{quiz_id}/attempt",
+        json={"answer": "X"},
+        headers=user_headers,
+    )
+    assert res.status_code == 200
+    assert res.get_json()["data"]["is_correct"] is False
+
+
+def test_short_answer_quiz_attempt(client, test_user, test_admin_user):
+    admin_headers = get_admin_headers(
+        get_admin_jwt_token(test_admin_user, "admin", "admin@example.com")
+    )
+    user_headers = get_auth_headers(
+        get_test_jwt_token(test_user, "testuser", "test@example.com")
+    )
+
+    res = client.post(
+        "/admin/quizzes",
+        json={
+            "question": "자전거 필수 장비는?",
+            "quiz_type": "short_answer",
+            "correct_answer": "헬멧",
+            "answers": {"accepted_answers": ["helmet", "헬 멧"], "case_sensitive": False},
+            "explanation": "헬멧을 착용해야 합니다.",
+        },
+        headers=admin_headers,
+    )
+    quiz_id = res.get_json()["data"]["id"]
+
+    res = client.post(
+        f"/quizzes/{quiz_id}/attempt",
+        json={"answer": "Helmet"},
+        headers=user_headers,
+    )
+    assert res.status_code == 200
+    assert res.get_json()["data"]["is_correct"] is True
+
+    res = client.post(
+        f"/quizzes/{quiz_id}/attempt",
+        json={"answer": "장갑"},
+        headers=user_headers,
+    )
+    assert res.status_code == 200
+    assert res.get_json()["data"]["is_correct"] is False
+
+
 def test_list_quizzes(client, test_user, test_admin_user):
     """퀴즈 목록 조회 테스트 (JWT 인증 필요) - answers와 hint_link 포함 확인"""
     admin_headers = get_admin_headers(

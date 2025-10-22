@@ -20,7 +20,11 @@ DROP TABLE IF EXISTS quizzes CASCADE;
 DROP TABLE IF EXISTS news CASCADE;
 DROP TABLE IF EXISTS user_levels CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS course_recommendation_points CASCADE;
+DROP TABLE IF EXISTS course_recommendation_courses CASCADE;
+DROP TABLE IF EXISTS course_recommendation_assets CASCADE;
 DROP TABLE IF EXISTS course_recommendations CASCADE;
+DROP TYPE IF EXISTS quiz_type_enum;
 
 CREATE TABLE user_levels (
     level INTEGER PRIMARY KEY,
@@ -67,12 +71,14 @@ CREATE TABLE user_verifications (
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
+CREATE TYPE quiz_type_enum AS ENUM ('multiple_choice', 'ox', 'short_answer');
+
 CREATE TABLE quizzes (
     id SERIAL PRIMARY KEY,
     question TEXT NOT NULL,
-    quizzes_type VARCHAR(100) NOT NULL, -- OX, 객관식, 단답식
+    quiz_type quiz_type_enum NOT NULL DEFAULT 'multiple_choice',
     correct_answer TEXT NOT NULL,
-    answers TEXT[],
+    answers JSONB DEFAULT '[]'::jsonb,
     hint_link VARCHAR(512),
     explanation TEXT,
     display_date DATE DEFAULT CURRENT_DATE,
@@ -246,8 +252,10 @@ CREATE TABLE safety_reports (
 CREATE TABLE course_recommendations (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL,
-    course_name VARCHAR(255) NOT NULL,
-    description TEXT,
+    title VARCHAR(255) NOT NULL,
+    summary TEXT,
+    review TEXT,
+    photo_url TEXT,
     status VARCHAR(50) DEFAULT 'pending',
     points_awarded INTEGER DEFAULT 0,
     reviewed_by_admin_id INTEGER,
@@ -258,14 +266,41 @@ CREATE TABLE course_recommendations (
     FOREIGN KEY (reviewed_by_admin_id) REFERENCES users (id) ON DELETE SET NULL
 );
 
-CREATE TABLE course_waypoints (
+CREATE TABLE course_recommendation_courses (
+    id SERIAL PRIMARY KEY,
+    recommendation_id INTEGER NOT NULL,
+    course_label VARCHAR(50) NOT NULL,
+    description TEXT,
+    distance_km DECIMAL(6, 2),
+    duration_minutes INTEGER,
+    difficulty_level VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (recommendation_id) REFERENCES course_recommendations (id) ON DELETE CASCADE
+);
+
+CREATE TABLE course_recommendation_points (
     id SERIAL PRIMARY KEY,
     course_id INTEGER NOT NULL,
     sequence_order INTEGER NOT NULL,
-    waypoint_name VARCHAR(255) NOT NULL,
-    description TEXT,
+    point_type VARCHAR(10) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    address TEXT,
+    latitude DECIMAL(9, 6),
+    longitude DECIMAL(9, 6),
+    notes TEXT,
+    photo_url TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (course_id) REFERENCES course_recommendations (id) ON DELETE CASCADE
+    FOREIGN KEY (course_id) REFERENCES course_recommendation_courses (id) ON DELETE CASCADE,
+    CONSTRAINT course_points_sequence_check CHECK (sequence_order BETWEEN 1 AND 5)
+);
+
+CREATE TABLE course_recommendation_assets (
+    id SERIAL PRIMARY KEY,
+    recommendation_id INTEGER NOT NULL,
+    asset_type VARCHAR(50) NOT NULL,
+    url TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (recommendation_id) REFERENCES course_recommendations (id) ON DELETE CASCADE
 );
 
 -- 즐겨찾기

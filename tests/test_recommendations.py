@@ -1,4 +1,5 @@
 import io
+import json
 from unittest.mock import patch
 
 import pytest
@@ -19,6 +20,41 @@ def app():
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+def _courses_payload(
+    label: str = "A코스",
+    include_point_photos: bool = False,
+    include_address: bool = False,
+    include_point_descriptions: bool = False,
+) -> str:
+    points = [
+        {"type": "start", "name": "출발지"},
+        {"type": "finish", "name": "도착지"},
+    ]
+
+    if include_point_photos:
+        for idx, point in enumerate(points, start=1):
+            point["photo_field"] = f"point_photo_{idx}"
+
+    if include_address:
+        for idx, point in enumerate(points, start=1):
+            point["address"] = f"서울시 테스트구 {idx}번지"
+
+    if include_point_descriptions:
+        for idx, point in enumerate(points, start=1):
+            point["description"] = f"지점 설명 {idx}"
+
+    return json.dumps(
+        [
+            {
+                "label": label,
+                "description": "기본 코스",
+                "points": points,
+            }
+        ],
+        ensure_ascii=False,
+    )
 
 
 @pytest.fixture
@@ -62,30 +98,66 @@ def create_fake_image():
 
 @patch("app.routes.recommendations.upload_file_to_ncp")
 def test_create_and_list_recommendations(mock_upload, client, test_user):
-    mock_upload.return_value = ("https://test.com/photo.jpg", None)
+    mock_upload.side_effect = [
+        ("https://test.com/photo.jpg", None),
+        ("https://test.com/point_start.jpg", None),
+        ("https://test.com/point_finish.jpg", None),
+    ]
     token = get_test_jwt_token(
         test_user, f"user_{test_user}", f"user{test_user}@example.com"
     )
     headers = get_auth_headers(token)
 
-    img, _ = create_fake_image()
+    route_photo = (io.BytesIO(b"route"), "photo.jpg")
+    start_photo = (io.BytesIO(b"start"), "start.jpg")
+    finish_photo = (io.BytesIO(b"finish"), "finish.jpg")
     res = client.post(
         "/users/course-recommendations",
         data={
-            "location_name": "한강",
+            "title": "한강",
+            "description": "설명",
             "review": "멋진 코스",
-            "photo": (img, "photo.jpg"),
+            "courses": _courses_payload(
+                "한강 코스",
+                include_point_photos=True,
+                include_address=True,
+                include_point_descriptions=True,
+            ),
+            "photo": route_photo,
+            "point_photo_1": start_photo,
+            "point_photo_2": finish_photo,
         },
         headers=headers,
         content_type="multipart/form-data",
     )
     assert res.status_code == 201
+    created = res.get_json()["data"][0]
+    created_points = created["courses"]
+    assert created_points[0]["point_id"] == 0
+    assert created_points[1]["point_id"] == 1
+    assert created_points[0]["photo_url"] == "https://test.com/point_start.jpg"
+    assert created_points[1]["photo_url"] == "https://test.com/point_finish.jpg"
+    assert created_points[0]["address"] == "서울시 테스트구 1번지"
+    assert created_points[1]["address"] == "서울시 테스트구 2번지"
+    assert created_points[0]["description"] == "지점 설명 1"
+    assert created_points[1]["description"] == "지점 설명 2"
 
     res = client.get("/users/course-recommendations", headers=headers)
     assert res.status_code == 200
     data = res.get_json()["data"]
     assert len(data) == 1
-    assert data[0]["location_name"] == "한강"
+    assert data[0]["title"] == "한강"
+    assert data[0]["description"] == "설명"
+    assert len(data[0]["courses"]) == 2
+    list_points = data[0]["courses"]
+    assert list_points[0]["point_id"] == 0
+    assert list_points[1]["point_id"] == 1
+    assert list_points[0]["photo_url"] == "https://test.com/point_start.jpg"
+    assert list_points[1]["photo_url"] == "https://test.com/point_finish.jpg"
+    assert list_points[0]["address"] == "서울시 테스트구 1번지"
+    assert list_points[1]["address"] == "서울시 테스트구 2번지"
+    assert list_points[0]["description"] == "지점 설명 1"
+    assert list_points[1]["description"] == "지점 설명 2"
 
 
 @patch("app.routes.recommendations.upload_file_to_ncp")
@@ -100,8 +172,9 @@ def test_verify_recommendation(mock_upload, client, test_user, admin_user):
     res = client.post(
         "/users/course-recommendations",
         data={
-            "location_name": "한강",
+            "title": "한강",
             "review": "멋진 코스",
+            "courses": _courses_payload("한강 코스", include_address=True),
             "photo": (img, "photo.jpg"),
         },
         headers=user_headers,
@@ -144,8 +217,9 @@ def test_weekly_recommendation_limit(mock_upload, client, test_user):
         res = client.post(
             "/users/course-recommendations",
             data={
-                "location_name": f"코스{i}",
+                "title": f"코스{i}",
                 "review": "굿",
+                "courses": _courses_payload(f"코스{i} 루트"),
                 "photo": (img, f"p{i}.jpg"),
             },
             headers=headers,
@@ -157,8 +231,9 @@ def test_weekly_recommendation_limit(mock_upload, client, test_user):
     res = client.post(
         "/users/course-recommendations",
         data={
-            "location_name": "코스3",
+            "title": "코스3",
             "review": "굿",
+            "courses": _courses_payload("코스3 루트"),
             "photo": (img, "p3.jpg"),
         },
         headers=headers,
@@ -182,8 +257,9 @@ def test_admin_list_all_recommendations(mock_upload, client, test_user, admin_us
     client.post(
         "/users/course-recommendations",
         data={
-            "location_name": "한강",
+            "title": "한강",
             "review": "멋진 코스",
+            "courses": _courses_payload("한강 코스"),
             "photo": (img, "photo.jpg"),
         },
         headers=user_headers,
@@ -220,7 +296,7 @@ def test_admin_course_recommendations_pagination(client, app, admin_user, test_u
             cur.execute("DELETE FROM course_recommendations")
             for i in range(3):
                 cur.execute(
-                    "INSERT INTO course_recommendations (user_id, location_name, review) VALUES (%s, %s, %s)",
+                    "INSERT INTO course_recommendations (user_id, title, review) VALUES (%s, %s, %s)",
                     (test_user, f"장소{i}", f"리뷰{i}"),
                 )
 
@@ -231,7 +307,7 @@ def test_admin_course_recommendations_pagination(client, app, admin_user, test_u
     assert res.status_code == 200
     data = res.get_json()["data"]
     assert len(data) == 1
-    assert data[0]["location_name"] == "장소1"
+    assert data[0]["title"] == "장소1"
 
 
 @patch("app.routes.recommendations.upload_file_to_ncp")
@@ -250,8 +326,9 @@ def test_week_recommendation_count(mock_upload, client, test_user):
     client.post(
         "/users/course-recommendations",
         data={
-            "location_name": "한강",
+            "title": "한강",
             "review": "굿",
+            "courses": _courses_payload("한강 루트"),
             "photo": (img, "p.jpg"),
         },
         headers=headers,
@@ -268,11 +345,11 @@ def test_export_course_recommendations_csv(client, app, test_user):
         db = get_db()
         with db.cursor() as cur:
             cur.execute(
-                "INSERT INTO course_recommendations (user_id, location_name, review, status) VALUES (%s, %s, %s, %s)",
+                "INSERT INTO course_recommendations (user_id, title, review, status) VALUES (%s, %s, %s, %s)",
                 (test_user, "한강", "굿", "verified"),
             )
             cur.execute(
-                "INSERT INTO course_recommendations (user_id, location_name, review, status) VALUES (%s, %s, %s, %s)",
+                "INSERT INTO course_recommendations (user_id, title, review, status) VALUES (%s, %s, %s, %s)",
                 (test_user, "잠실", "보통", "pending"),
             )
 

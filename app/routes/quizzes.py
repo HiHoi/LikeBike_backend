@@ -1,6 +1,7 @@
 import asyncio
 import os
 from datetime import date, datetime
+from typing import Any, Dict, List, Sequence
 
 import aiohttp
 from flask import Blueprint, request
@@ -13,6 +14,53 @@ from ..utils.timezone import get_kst_today
 bp = Blueprint("quizzes", __name__)
 
 CLOVA_API_URL = "https://clovastudio.apigw.ntruss.com/testapp/v1/chat/completions"
+ALLOWED_QUIZ_TYPES = {"multiple_choice", "ox", "short_answer"}
+
+
+def _normalize_short_answer_payload(answers: Any, correct_answer: str) -> Dict[str, Any]:
+    if answers is None:
+        accepted_answers: List[str] = []
+        case_sensitive = False
+    elif isinstance(answers, dict):
+        accepted_answers = [
+            str(value)
+            for value in answers.get("accepted_answers", [])
+            if isinstance(value, str) and value.strip()
+        ]
+        case_sensitive = bool(answers.get("case_sensitive", False))
+    elif isinstance(answers, Sequence) and not isinstance(answers, (str, bytes)):
+        accepted_answers = [str(value) for value in answers if isinstance(value, str)]
+        case_sensitive = False
+    else:
+        raise ValueError("answers must be a list or object when quiz_type is 'short_answer'")
+
+    normalized_correct = correct_answer.strip()
+    if not normalized_correct:
+        raise ValueError("correct_answer required")
+
+    if normalized_correct not in accepted_answers:
+        accepted_answers.append(normalized_correct)
+
+    unique_answers = []
+    seen = set()
+    key_func = (lambda v: v if case_sensitive else v.casefold())
+    for value in accepted_answers:
+        key = key_func(value)
+        if key not in seen:
+            seen.add(key)
+            unique_answers.append(value)
+
+    return {"accepted_answers": unique_answers, "case_sensitive": case_sensitive}
+
+
+def _evaluate_short_answer(config: Dict[str, Any], answer: str) -> bool:
+    accepted = config.get("accepted_answers", []) if isinstance(config, dict) else []
+    case_sensitive = bool(config.get("case_sensitive", False)) if isinstance(config, dict) else False
+    submitted = answer.strip()
+    if not case_sensitive:
+        submitted_key = submitted.casefold()
+        return any(str(value).strip().casefold() == submitted_key for value in accepted)
+    return any(str(value).strip() == submitted for value in accepted)
 
 
 async def _generate_from_clova(prompt: str, api_key: str) -> dict:
@@ -62,6 +110,11 @@ def create_quiz():
               type: string
               description: 정답
               example: "헬멧"
+            quiz_type:
+              type: string
+              enum: [multiple_choice, ox, short_answer]
+              description: 퀴즈 유형
+              example: multiple_choice
             hint_link:
               type: string
               description: 힌트에 대한 사이트 링크
@@ -71,11 +124,7 @@ def create_quiz():
               description: 정답 해설
               example: "헬멧은 머리를 보호하기 위한 필수 장비입니다."
             answers:
-              type: array
-              description: 선택지 배열 (정답 포함)
-              items:
-                type: string
-              example: ["모자", "선글라스", "헬멧", "장갑"]
+              description: 객관식 보기 배열 혹은 단답형 허용 답안 JSON (예: {"accepted_answers": []})
             display_date:
               type: string
               format: date
@@ -97,26 +146,26 @@ def create_quiz():
               type: array
               items:
                 type: object
-                properties:
-                  id:
-                    type: integer
-                    example: 1
-                  question:
-                    type: string
-                    example: "자전거 안전을 위해 반드시 착용해야 하는 것은?"
-                  correct_answer:
-                    type: string
-                    example: "헬멧"
-                  hint_link:
-                    type: string
-                    example: "https://example.com/hint"
-                  answers:
-                    type: array
-                    items:
+                  properties:
+                    id:
+                      type: integer
+                      example: 1
+                    question:
                       type: string
-                    example: ["모자", "선글라스", "헬멧", "장갑"]
-                  display_date:
-                    type: string
+                      example: "자전거 안전을 위해 반드시 착용해야 하는 것은?"
+                    quiz_type:
+                      type: string
+                      example: multiple_choice
+                    correct_answer:
+                      type: string
+                      example: "헬멧"
+                    hint_link:
+                      type: string
+                      example: "https://example.com/hint"
+                    answers:
+                      description: 선택지 배열 또는 단답형 허용 답안 정의
+                    display_date:
+                      type: string
                     format: date
                     example: "2024-01-01"
       400:
@@ -128,8 +177,9 @@ def create_quiz():
     """
     data = request.get_json() or {}
     question = data.get("question")
-    correct_answer = data.get("correct_answer")
-    answers = data.get("answers", [])  # 선택지 배열
+    correct_answer = data.get("correct_answer", "")
+    quiz_type = data.get("quiz_type", "multiple_choice")
+    answers_payload = data.get("answers")
     hint_link = data.get("hint_link")
     explanation = data.get("explanation")
     display_date = data.get("display_date") or get_kst_today()
@@ -144,14 +194,55 @@ def create_quiz():
             except ValueError:
                 display_date = get_kst_today()
 
+    if quiz_type not in ALLOWED_QUIZ_TYPES:
+        return make_response(
+            {
+                "error": "quiz_type must be one of ['multiple_choice', 'ox', 'short_answer']"
+            },
+            400,
+        )
+
+    correct_answer = str(correct_answer).strip()
+
     if not question or not correct_answer:
         return make_response({"error": "question and correct_answer required"}, 400)
+
+    try:
+        if quiz_type == "multiple_choice":
+            if not isinstance(answers_payload, list) or len(answers_payload) < 2:
+                raise ValueError("answers must include at least two choices for multiple_choice quizzes")
+            normalized_answers = [str(value) for value in answers_payload]
+        elif quiz_type == "ox":
+            normalized_correct = correct_answer.upper()
+            if normalized_correct not in {"O", "X"}:
+                raise ValueError("correct_answer must be 'O' or 'X' for ox quizzes")
+            correct_answer = normalized_correct
+            options = ["O", "X"]
+            if isinstance(answers_payload, list) and {opt.upper() for opt in answers_payload} == {"O", "X"}:
+                options = [value.upper() for value in answers_payload]
+            normalized_answers = options
+        else:
+            normalized_answers = _normalize_short_answer_payload(answers_payload, correct_answer)
+    except ValueError as exc:
+        return make_response({"error": str(exc)}, 400)
 
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO quizzes (question, correct_answer, answers, hint_link, explanation, display_date) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-            (question, correct_answer, answers, hint_link, explanation, display_date),
+            """
+            INSERT INTO quizzes (question, quiz_type, correct_answer, answers, hint_link, explanation, display_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                question,
+                quiz_type,
+                correct_answer,
+                normalized_answers,
+                hint_link,
+                explanation,
+                display_date,
+            ),
         )
         quiz_id = cur.fetchone()["id"]
 
@@ -161,7 +252,8 @@ def create_quiz():
             "question": question,
             "hint_link": hint_link,
             "correct_answer": correct_answer,
-            "answers": answers,
+            "quiz_type": quiz_type,
+            "answers": normalized_answers,
             "explanation": explanation,
             "display_date": display_date.isoformat(),
         },
@@ -275,24 +367,73 @@ def update_quiz(quiz_id):
     """
     data = request.get_json() or {}
     question = data.get("question")
-    correct_answer = data.get("correct_answer")
-    answers = data.get("answers", [])
+    correct_answer = data.get("correct_answer", "")
+    quiz_type = data.get("quiz_type") or "multiple_choice"
+    answers_payload = data.get("answers")
     hint_link = data.get("hint_link")
     explanation = data.get("explanation")
     if not question or not correct_answer:
         return make_response({"error": "question and correct_answer required"}, 400)
 
+    if quiz_type not in ALLOWED_QUIZ_TYPES:
+        return make_response(
+            {
+                "error": "quiz_type must be one of ['multiple_choice', 'ox', 'short_answer']"
+            },
+            400,
+        )
+
+    correct_answer = str(correct_answer).strip()
+
+    try:
+        if quiz_type == "multiple_choice":
+            if not isinstance(answers_payload, list) or len(answers_payload) < 2:
+                raise ValueError("answers must include at least two choices for multiple_choice quizzes")
+            normalized_answers = [str(value) for value in answers_payload]
+        elif quiz_type == "ox":
+            normalized_correct = correct_answer.upper()
+            if normalized_correct not in {"O", "X"}:
+                raise ValueError("correct_answer must be 'O' or 'X' for ox quizzes")
+            correct_answer = normalized_correct
+            options = ["O", "X"]
+            if isinstance(answers_payload, list) and {opt.upper() for opt in answers_payload} == {"O", "X"}:
+                options = [value.upper() for value in answers_payload]
+            normalized_answers = options
+        else:
+            normalized_answers = _normalize_short_answer_payload(answers_payload, correct_answer)
+    except ValueError as exc:
+        return make_response({"error": str(exc)}, 400)
+
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "UPDATE quizzes SET question = %s, correct_answer = %s, answers = %s, hint_link = %s, explanation = %s WHERE id = %s RETURNING id, question, correct_answer, answers, hint_link, explanation",
-            (question, correct_answer, answers, hint_link, explanation, quiz_id),
+            """
+            UPDATE quizzes
+            SET question = %s,
+                quiz_type = %s,
+                correct_answer = %s,
+                answers = %s,
+                hint_link = %s,
+                explanation = %s
+            WHERE id = %s
+            RETURNING id, question, quiz_type, correct_answer, answers, hint_link, explanation
+            """,
+            (
+                question,
+                quiz_type,
+                correct_answer,
+                normalized_answers,
+                hint_link,
+                explanation,
+                quiz_id,
+            ),
         )
         result = cur.fetchone()
         if not result:
             return make_response({"error": "quiz not found"}, 404)
 
-    return make_response(dict(result))
+    updated = dict(result)
+    return make_response(updated)
 
 
 @bp.route("/admin/quizzes/<int:quiz_id>", methods=["DELETE"])
@@ -396,7 +537,11 @@ def list_quizzes():
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "SELECT id, question, answers, hint_link, explanation, display_date FROM quizzes"
+            """
+            SELECT id, question, quiz_type, answers, hint_link, explanation, display_date
+            FROM quizzes
+            ORDER BY display_date DESC, id DESC
+            """
         )
         quizzes = cur.fetchall()
     for q in quizzes:
@@ -532,13 +677,17 @@ def attempt_quiz(quiz_id):
     user_id = get_current_user_id()
     data = request.get_json() or {}
     answer = data.get("answer")
-    if not answer:
+    if answer is None:
         return make_response({"error": "answer required"}, 400)
+    submitted_answer = str(answer)
 
     db = get_db()
     with db.cursor() as cur:
         # 퀴즈 정보 조회
-        cur.execute("SELECT correct_answer FROM quizzes WHERE id = %s", (quiz_id,))
+        cur.execute(
+            "SELECT quiz_type, correct_answer, answers FROM quizzes WHERE id = %s",
+            (quiz_id,),
+        )
         quiz = cur.fetchone()
         if not quiz:
             return make_response({"error": "quiz not found"}, 404)
@@ -553,7 +702,23 @@ def attempt_quiz(quiz_id):
         )
         already_correct = cur.fetchone()
 
-        is_correct = answer == quiz["correct_answer"]
+        quiz_type = quiz["quiz_type"]
+        correct_answer = quiz["correct_answer"]
+        answers_payload = quiz.get("answers")
+
+        if quiz_type == "multiple_choice":
+            is_correct = submitted_answer == correct_answer
+        elif quiz_type == "ox":
+            is_correct = submitted_answer.strip().upper() == correct_answer
+        else:
+            if isinstance(answers_payload, dict):
+                short_answer_config = answers_payload
+            else:
+                short_answer_config = _normalize_short_answer_payload(
+                    answers_payload,
+                    correct_answer,
+                )
+            is_correct = _evaluate_short_answer(short_answer_config, submitted_answer)
 
         # 시도 기록 저장
         cur.execute(
@@ -698,18 +863,51 @@ def generate_quiz():
 
     question = result.get("question")
     correct_answer = result.get("correct_answer")
+    answers_payload = result.get("answers")
+    quiz_type = result.get("quiz_type", "multiple_choice")
+
     if not question or not correct_answer:
         return make_response({"error": "invalid response from Clova X"}, 502)
+
+    if quiz_type not in ALLOWED_QUIZ_TYPES:
+        quiz_type = "multiple_choice"
+
+    correct_answer = str(correct_answer).strip()
+    if not correct_answer:
+        return make_response({"error": "invalid response from Clova X"}, 502)
+
+    try:
+        if quiz_type == "multiple_choice":
+            normalized_answers = answers_payload if isinstance(answers_payload, list) else []
+        elif quiz_type == "ox":
+            correct_answer = correct_answer.strip().upper()
+            normalized_answers = ["O", "X"]
+        else:
+            normalized_answers = _normalize_short_answer_payload(answers_payload, correct_answer)
+    except ValueError:
+        quiz_type = "multiple_choice"
+        normalized_answers = []
+        correct_answer = str(correct_answer)
 
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO quizzes (question, correct_answer) VALUES (%s, %s) RETURNING id",
-            (question, correct_answer),
+            """
+            INSERT INTO quizzes (question, quiz_type, correct_answer, answers)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+            """,
+            (question, quiz_type, str(correct_answer), normalized_answers),
         )
         quiz_id = cur.fetchone()["id"]
 
     return make_response(
-        {"id": quiz_id, "question": question, "correct_answer": correct_answer},
+        {
+            "id": quiz_id,
+            "question": question,
+            "quiz_type": quiz_type,
+            "correct_answer": str(correct_answer),
+            "answers": normalized_answers,
+        },
         201,
     )

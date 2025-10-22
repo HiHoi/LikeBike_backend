@@ -45,8 +45,9 @@ erDiagram
     quizzes {
         integer id PK
         string question
+        enum quiz_type
         string correct_answer
-        string[] answers
+        jsonb answers
         varchar hint_link
         text explanation
         date display_date
@@ -94,14 +95,48 @@ erDiagram
     course_recommendations {
         integer id PK
         integer user_id FK
-        varchar location_name
-        varchar photo_url
+        varchar title
+        text summary
         text review
+        varchar photo_url
         varchar status
         integer points_awarded
         integer reviewed_by_admin_id FK
         text admin_notes
         timestamp reviewed_at
+        timestamp created_at
+    }
+
+    course_recommendation_courses {
+        integer id PK
+        integer recommendation_id FK
+        varchar course_label
+        text description
+        decimal distance_km
+        integer duration_minutes
+        varchar difficulty_level
+        timestamp created_at
+    }
+
+    course_recommendation_points {
+        integer id PK
+        integer course_id FK
+        integer sequence_order
+        varchar point_type
+        varchar name
+        text address
+        decimal latitude
+        decimal longitude
+        text notes
+        text photo_url
+        timestamp created_at
+    }
+
+    course_recommendation_assets {
+        integer id PK
+        integer recommendation_id FK
+        varchar asset_type
+        text url
         timestamp created_at
     }
 
@@ -212,6 +247,10 @@ erDiagram
     quizzes ||--o{ quiz_explanations : "has"
     quizzes ||--o{ user_quiz_explanation_views : ""
 
+    course_recommendations ||--o{ course_recommendation_courses : "includes"
+    course_recommendation_courses ||--o{ course_recommendation_points : "visits"
+    course_recommendations ||--o{ course_recommendation_assets : "assets"
+
     routes ||--o{ route_points : "contains"
 
     community_posts ||--o{ post_comments : "has"
@@ -247,7 +286,7 @@ erDiagram
 
 ### 5. 게이미피케이션
 
-- **quizzes**: 퀴즈 문제 및 답안
+- **quizzes**: OX/객관식/단답형 등 다양한 유형의 퀴즈 문제와 채점 규칙
 - **user_quiz_attempts**: 사용자 퀴즈 시도 기록 (1회만 가능, 정답 시 포인트 지급)
 - **quiz_explanations**: 퀴즈 해설 (정답 시 보여지는 설명)
 - **user_quiz_explanation_views**: 해설 조회 기록 및 포인트 지급 관리 (한 번만 지급)
@@ -260,7 +299,10 @@ erDiagram
 - **user_settings**: 개인 설정 (알림, 프라이버시 등)
 
 ### 7. 코스 추천 기능
-- **course_recommendations**: 사용자가 추천한 코스와 관리자 검토 내역을 관리합니다.
+- **course_recommendations**: 추천 묶음의 메타데이터(제목, 요약, 후기, 검토 상태) 관리
+- **course_recommendation_courses**: 하나의 추천 묶음 안에 포함된 개별 루트 정보
+- **course_recommendation_points**: 각 루트의 출발·경유·도착 지점 (최대 5개, 지점별 `address`·`notes`(지점 설명)·`photo_url` 보관)
+- **course_recommendation_assets**: 추천에 첨부된 사진, GPX 등 추가 자료
   - 사용자는 주 2회까지만 추천 가능
   - 관리자 검토 시 admin_notes 기록 가능
 
