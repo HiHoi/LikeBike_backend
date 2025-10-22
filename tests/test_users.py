@@ -410,10 +410,10 @@ def test_admin_get_user_activities(client, app):
 
             cur.execute(
                 """
-                INSERT INTO quizzes (question, correct_answer, answers)
-                VALUES (%s, %s, %s) RETURNING id
+                INSERT INTO quizzes (question, quiz_type, correct_answer, answers)
+                VALUES (%s, %s, %s, %s) RETURNING id
                 """,
-                ("Q1", "A", ["A", "B"]),
+                ("Q1", "multiple_choice", "A", ["A", "B"]),
             )
             quiz_id = cur.fetchone()["id"]
 
