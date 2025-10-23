@@ -216,52 +216,55 @@ def create_course_recommendation():
     tags:
       - Course Recommendations
     summary: 새로운 코스 추천 등록
-      description: |
-        추천 묶음의 제목, 코스 요약, 최대 5개 지점을 포함한 루트 정보를 작성하고 사진을 업로드합니다.
-        코스 추천은 **주당 두 번**까지만 등록할 수 있습니다.
+    description: |
+      추천 묶음의 제목, 코스 요약, 최대 5개 지점을 포함한 루트 정보를 작성하고 사진을 업로드합니다.
+      코스 추천은 **주당 두 번**까지만 등록할 수 있습니다.
     security:
       - JWT: []
     consumes:
       - multipart/form-data
     parameters:
-        - in: formData
-          name: title
-          required: true
-          type: string
-          description: 추천 묶음의 제목
-        - in: formData
-          name: description
-          required: false
-          type: string
-          description: 추천 요약. `summary`와 동일하게 처리됩니다.
-        - in: formData
-          name: summary
-          required: false
-          type: string
-          description: 추천 코스 요약
-        - in: formData
-          name: review
-          required: true
-          type: string
-          description: 코스 후기 내용
-        - in: formData
-          name: courses
-          required: true
-          type: string
-          description: |
-            JSON 배열 문자열. 각 코스는 label, description, points(출발/경유/도착 최대 5개)를 포함합니다.
-            각 point에는 선택적으로 `address`(지번/도로명), `description`(지점 설명), `photo_field`를 지정해 해당 이름의 form-data 파일을 업로드할 수 있습니다.
-          example: '[{"label": "A코스", "points": [{"type": "start", "name": "출발", "address": "서울시 영등포구", "description": "출발지", "photo_field": "point_photo_1"}, {"type": "finish", "name": "도착"}]}]'
-        - in: formData
-          name: photo
-          required: true
-          type: file
-          description: 코스 사진 파일
-        - in: formData
-          name: point_photo_*
-          required: false
-          type: file
-          description: 각 지점에 첨부할 사진 파일. `courses` JSON의 `photo_field` 이름과 일치해야 합니다.
+      - in: formData
+        name: title
+        required: true
+        type: string
+        description: 추천 묶음의 제목
+      - in: formData
+        name: description
+        required: false
+        type: string
+        description: 추천 요약. `summary`와 동일하게 처리됩니다.
+      - in: formData
+        name: summary
+        required: false
+        type: string
+        description: 추천 코스 요약
+      - in: formData
+        name: review
+        required: true
+        type: string
+        description: 코스 후기 내용
+      - in: formData
+        name: courses
+        required: true
+        type: string
+        description: |
+          JSON 배열 문자열. 각 코스는 label, description,
+          points(출발/경유/도착 최대 5개)를 포함합니다.
+          각 point에는 선택적으로 `address`(지번/도로명),
+          `description`(지점 설명), `photo_field`를 지정해 해당 이름의
+          form-data 파일을 업로드할 수 있습니다.
+        example: '[{"label": "A코스", "points": [{"type": "start", "name": "출발", "address": "서울시 영등포구", "description": "출발지", "photo_field": "point_photo_1"}, {"type": "finish", "name": "도착"}]}]'
+      - in: formData
+        name: photo
+        required: true
+        type: file
+        description: 코스 사진 파일
+      - in: formData
+        name: point_photo_*
+        required: false
+        type: file
+        description: 각 지점에 첨부할 사진 파일. `courses` JSON의 `photo_field` 이름과 일치해야 합니다.
     responses:
       201:
         description: 코스 추천 생성 성공

@@ -124,7 +124,25 @@ def create_quiz():
               description: 정답 해설
               example: "헬멧은 머리를 보호하기 위한 필수 장비입니다."
             answers:
-              description: 객관식 보기 배열 혹은 단답형 허용 답안 JSON (예: {"accepted_answers": []})
+              description: >-
+                객관식 보기 배열 또는 단답형 허용 답안 정의.
+                단답형은 {"accepted_answers": [...], "case_sensitive": false}
+                형식을 사용합니다.
+              oneOf:
+                - type: array
+                  items:
+                    type: string
+                  example: ["헬멧", "모자", "장갑"]
+                - type: object
+                  properties:
+                    accepted_answers:
+                      type: array
+                      items:
+                        type: string
+                      example: ["헬멧"]
+                    case_sensitive:
+                      type: boolean
+                      example: false
             display_date:
               type: string
               format: date
@@ -146,26 +164,32 @@ def create_quiz():
               type: array
               items:
                 type: object
-                  properties:
-                    id:
-                      type: integer
-                      example: 1
-                    question:
-                      type: string
-                      example: "자전거 안전을 위해 반드시 착용해야 하는 것은?"
-                    quiz_type:
-                      type: string
-                      example: multiple_choice
-                    correct_answer:
-                      type: string
-                      example: "헬멧"
-                    hint_link:
-                      type: string
-                      example: "https://example.com/hint"
-                    answers:
-                      description: 선택지 배열 또는 단답형 허용 답안 정의
-                    display_date:
-                      type: string
+                properties:
+                  id:
+                    type: integer
+                    example: 1
+                  question:
+                    type: string
+                    example: "자전거 안전을 위해 반드시 착용해야 하는 것은?"
+                  quiz_type:
+                    type: string
+                    example: multiple_choice
+                  correct_answer:
+                    type: string
+                    example: "헬멧"
+                  hint_link:
+                    type: string
+                    example: "https://example.com/hint"
+                  explanation:
+                    type: string
+                    example: "헬멧은 머리를 보호하기 위한 필수 장비입니다."
+                  answers:
+                    description: >-
+                      선택지 배열 또는 단답형 허용 답안 정의.
+                      단답형은 {"accepted_answers": [...], "case_sensitive": false}
+                      형식을 사용합니다.
+                  display_date:
+                    type: string
                     format: date
                     example: "2024-01-01"
       400:
