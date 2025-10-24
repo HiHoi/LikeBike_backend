@@ -328,9 +328,3 @@ CREATE TABLE cycling_goals (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
-
--- 마이그레이션 버전 관리 테이블
-CREATE TABLE schema_migrations (
-    version VARCHAR(255) PRIMARY KEY,
-    applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
