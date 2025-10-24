@@ -12,167 +12,196 @@ from .storage import upload_file_to_ncp
 
 bp = Blueprint("recommendations", __name__)
 
+COURSE_RECOMMENDATION_FIELD_DEFINITIONS: List[Dict[str, Any]] = [
+    {
+        "name": "course_name",
+        "type": "string",
+        "required": True,
+        "location": "formData",
+        "description": "추천 코스의 이름.",
+        "example": "한강 자전거 길",
+    },
+    {
+        "name": "course_description",
+        "type": "string",
+        "required": True,
+        "location": "formData",
+        "description": "코스에 대한 간단한 소개 또는 설명.",
+        "example": "초보도 즐기기 좋은 한강 뚝섬 루트",
+    },
+    {
+        "name": "review",
+        "type": "string",
+        "required": True,
+        "location": "formData",
+        "description": "코스를 직접 이용한 후기 내용.",
+        "example": "야경이 아름답고 자전거 도로가 잘 정비되어 있어요.",
+    },
+    {
+        "name": "places",
+        "type": "array",
+        "required": True,
+        "location": "formData",
+        "description": "방문한 장소 목록을 담은 JSON 배열 문자열.",
+        "example": '[{"name": "출발", "latitude": 37.5, "longitude": 127.0, "photo": "place_photo_1"}]',
+    },
+    {
+        "name": "photo",
+        "type": "file",
+        "required": True,
+        "location": "formData",
+        "description": "코스 대표 사진 파일.",
+    },
+    {
+        "name": "place_photo_{index}",
+        "type": "file",
+        "required": False,
+        "location": "formData",
+        "description": "각 장소별 사진 파일. places 배열의 순서에 맞춰 place_photo_1, place_photo_2 와 같이 업로드합니다.",
+    },
+]
 
-MAX_POINTS_PER_COURSE = 5
-POINT_TYPES = {"start", "via", "finish"}
+COURSE_RECOMMENDATION_PLACE_ITEM_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "required": ["name", "latitude", "longitude"],
+    "properties": {
+        "name": {
+            "type": "string",
+            "description": "장소 이름",
+            "example": "뚝섬 유원지",
+        },
+        "latitude": {
+            "type": "number",
+            "description": "위도",
+            "example": 37.536,
+        },
+        "longitude": {
+            "type": "number",
+            "description": "경도",
+            "example": 127.066,
+        },
+        "photo": {
+            "type": ["string", "object"],
+            "description": "장소 사진. 파일 필드명(place_photo_N) 또는 URL.",
+            "example": "place_photo_1",
+        },
+    },
+}
 
 
-def _clean_optional_text(value: Any) -> Any:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        stripped = value.strip()
-        return stripped if stripped else None
-    return value
+@bp.route("/users/course-recommendations/request-fields", methods=["GET"])
+@jwt_required
+def get_course_recommendation_request_fields():
+    """코스 추천 생성 시 필요한 폼 필드 정보를 제공합니다."""
+
+    return make_response(
+        {
+            "content_type": "multipart/form-data",
+            "fields": COURSE_RECOMMENDATION_FIELD_DEFINITIONS,
+            "place_item_schema": COURSE_RECOMMENDATION_PLACE_ITEM_SCHEMA,
+        }
+    )
 
 
-def _normalize_courses_payload(raw_payload: str) -> List[Dict[str, Any]]:
-    try:
-        payload = json.loads(raw_payload)
-    except (TypeError, json.JSONDecodeError) as exc:  # pragma: no cover - defensive
-        raise ValueError("courses must be a valid JSON array") from exc
+def _normalize_places_payload(raw_payload: Any) -> List[Dict[str, Any]]:
+    if raw_payload is None:
+        raise ValueError("places payload required")
+
+    if isinstance(raw_payload, str):
+        try:
+            payload = json.loads(raw_payload)
+        except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+            raise ValueError("places must be provided as a JSON array") from exc
+    else:
+        payload = raw_payload
 
     if not isinstance(payload, list) or not payload:
-        raise ValueError("courses must be a non-empty array")
+        raise ValueError("places must be a non-empty array")
 
-    normalized_courses: List[Dict[str, Any]] = []
-    for course in payload:
-        if not isinstance(course, dict):
-            raise ValueError("each course must be an object")
+    normalized_places: List[Dict[str, Any]] = []
+    for idx, place in enumerate(payload, start=1):
+        if not isinstance(place, dict):
+            raise ValueError("each place must be an object")
 
-        label = str(course.get("label") or course.get("course_label") or "").strip()
-        if not label:
-            raise ValueError("course label is required")
+        name = str(place.get("name") or "").strip()
+        if not name:
+            raise ValueError("place name is required")
 
-        points = course.get("points")
-        if not isinstance(points, list) or not points:
-            raise ValueError("each course must include at least a start and finish point")
-        if len(points) > MAX_POINTS_PER_COURSE:
-            raise ValueError(f"each course can include up to {MAX_POINTS_PER_COURSE} points")
+        latitude_raw = place.get("latitude")
+        longitude_raw = place.get("longitude")
+        try:
+            latitude = float(latitude_raw)
+            longitude = float(longitude_raw)
+        except (TypeError, ValueError):
+            raise ValueError("latitude and longitude must be numeric values")
 
-        normalized_points: List[Dict[str, Any]] = []
-        start_count = 0
-        finish_count = 0
-        for idx, point in enumerate(points, start=1):
-            if not isinstance(point, dict):
-                raise ValueError("each course point must be an object")
-            point_type = str(point.get("type") or point.get("point_type") or "").strip().lower()
-            if point_type not in POINT_TYPES:
-                raise ValueError("point type must be one of start, via, finish")
-            if point_type == "start":
-                start_count += 1
-            if point_type == "finish":
-                finish_count += 1
+        photo_value = place.get("photo")
+        photo_field: str | None = None
+        photo_url: str | None = None
+        if isinstance(photo_value, dict):
+            field_value = photo_value.get("field") or photo_value.get("file") or photo_value.get("key")
+            url_value = photo_value.get("url")
+            if field_value is not None:
+                field_value = str(field_value).strip()
+            if url_value is not None:
+                url_value = str(url_value).strip()
+            if field_value:
+                photo_field = field_value
+            if url_value:
+                photo_url = url_value
+        elif isinstance(photo_value, str):
+            trimmed = photo_value.strip()
+            if trimmed:
+                if trimmed.lower().startswith(("http://", "https://")):
+                    photo_url = trimmed
+                else:
+                    photo_field = trimmed
+        elif photo_value is not None:
+            raise ValueError("photo must be a string or an object with 'field'/'url'")
 
-            name = str(point.get("name") or "").strip()
-            if not name:
-                raise ValueError("point name is required")
-
-            address = _clean_optional_text(
-                point.get("address") or point.get("address_name")
-            )
-
-            description_value = point.get("description")
-            if description_value is None:
-                description_value = point.get("notes")
-            notes = _clean_optional_text(description_value)
-
-            photo_field_raw = point.get("photo_field") or point.get("photo_key")
-            photo_field = None
-            if photo_field_raw is not None:
-                photo_field = str(photo_field_raw).strip()
-                if not photo_field:
-                    raise ValueError("point photo_field cannot be empty when provided")
-
-            photo_url_raw = point.get("photo_url") or point.get("photo")
-            photo_url = None
-            if photo_url_raw is not None:
-                photo_url = str(photo_url_raw).strip()
-                if not photo_url:
-                    photo_url = None
-
-            normalized_points.append(
-                {
-                    "sequence_order": idx,
-                    "point_type": point_type,
-                    "name": name,
-                    "address": address,
-                    "latitude": point.get("latitude"),
-                    "longitude": point.get("longitude"),
-                    "notes": notes,
-                    "photo_field": photo_field,
-                    "photo_url": photo_url,
-                }
-            )
-
-        if start_count != 1 or finish_count != 1:
-            raise ValueError("each course must include exactly one start and one finish point")
-
-        normalized_courses.append(
+        normalized_places.append(
             {
-                "course_label": label,
-                "description": course.get("description"),
-                "distance_km": course.get("distance_km"),
-                "duration_minutes": course.get("duration_minutes"),
-                "difficulty_level": course.get("difficulty_level"),
-                "points": normalized_points,
+                "sequence_order": idx,
+                "name": name,
+                "latitude": latitude,
+                "longitude": longitude,
+                "photo_field": photo_field,
+                "photo_url": photo_url,
             }
         )
 
-    return normalized_courses
+    return normalized_places
 
 
-def _attach_courses(db, recommendations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _attach_places(db, recommendations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not recommendations:
         return []
 
     recommendation_ids = [rec["id"] for rec in recommendations]
-    courses: Dict[int, List[Dict[str, Any]]] = {rec_id: [] for rec_id in recommendation_ids}
-    points: Dict[int, List[Dict[str, Any]]] = {}
+    places_map: Dict[int, List[Dict[str, Any]]] = {rec_id: [] for rec_id in recommendation_ids}
 
     with db.cursor() as cur:
         cur.execute(
             """
-            SELECT id, recommendation_id, course_label, description, distance_km, duration_minutes, difficulty_level, created_at
-            FROM course_recommendation_courses
+            SELECT id, recommendation_id, sequence_order, name, latitude, longitude, photo_url, created_at
+            FROM course_recommendation_places
             WHERE recommendation_id = ANY(%s)
-            ORDER BY created_at ASC, id ASC
+            ORDER BY recommendation_id ASC, sequence_order ASC, id ASC
             """,
             (recommendation_ids,),
         )
-        course_rows = cur.fetchall()
-
-        course_ids = [row["id"] for row in course_rows]
-        for row in course_rows:
-            courses[row["recommendation_id"]].append(dict(row))
-
-        if course_ids:
-            cur.execute(
-                """
-                SELECT id, course_id, sequence_order, point_type, name, address, latitude, longitude, notes, photo_url
-                FROM course_recommendation_points
-                WHERE course_id = ANY(%s)
-                ORDER BY course_id ASC, sequence_order ASC
-                """,
-                (course_ids,),
-            )
-            for point_row in cur.fetchall():
-                points.setdefault(point_row["course_id"], []).append(dict(point_row))
+        for row in cur.fetchall():
+            places_map.setdefault(row["recommendation_id"], []).append(dict(row))
 
     for rec in recommendations:
-        rec_courses = []
-        for course in courses.get(rec["id"], []):
-            course_dict = dict(course)
-            course_dict["points"] = points.get(course_dict["id"], [])
-            rec_courses.append(course_dict)
-        rec["courses"] = rec_courses
+        rec["places"] = places_map.get(rec["id"], [])
 
     return recommendations
 
 
 def _serialize_recommendation(rec: Dict[str, Any]) -> Dict[str, Any]:
     base = dict(rec)
-    courses = base.pop("courses", [])
+    places = base.pop("places", [])
 
     summary_value = base.pop("summary", None)
     if summary_value is not None:
@@ -180,26 +209,33 @@ def _serialize_recommendation(rec: Dict[str, Any]) -> Dict[str, Any]:
     else:
         base["description"] = base.get("description")
 
-    flattened: List[Dict[str, Any]] = []
-    point_index = 0
-    for course in courses:
-        points = sorted(
-            course.get("points", []),
-            key=lambda p: (p.get("sequence_order") or 0, p.get("id") or 0),
-        )
-        for point in points:
-            flattened.append(
-                {
-                    "point_id": point_index,
-                    "name": point.get("name"),
-                    "address": point.get("address"),
-                    "description": point.get("notes"),
-                    "photo_url": point.get("photo_url"),
-                }
-            )
-            point_index += 1
+    title = base.get("title")
+    if title is not None:
+        base["course_name"] = title
 
-    base["courses"] = flattened
+    if base.get("description") is not None:
+        base["course_description"] = base["description"]
+
+    sorted_places = sorted(
+        places,
+        key=lambda p: (p.get("sequence_order") or 0, p.get("id") or 0),
+    )
+    serialized_places: List[Dict[str, Any]] = []
+    for idx, place in enumerate(sorted_places):
+        latitude = place.get("latitude")
+        longitude = place.get("longitude")
+        serialized_places.append(
+            {
+                "place_id": idx,
+                "sequence_order": place.get("sequence_order"),
+                "name": place.get("name"),
+                "latitude": float(latitude) if latitude is not None else None,
+                "longitude": float(longitude) if longitude is not None else None,
+                "photo_url": place.get("photo_url"),
+            }
+        )
+
+    base["places"] = serialized_places
     return base
 
 
@@ -217,54 +253,47 @@ def create_course_recommendation():
       - Course Recommendations
     summary: 새로운 코스 추천 등록
     description: |
-      추천 묶음의 제목, 코스 요약, 최대 5개 지점을 포함한 루트 정보를 작성하고 사진을 업로드합니다.
+      코스명과 설명, 방문한 장소 목록을 간단한 JSON 구조로 전달하여 추천 코스를 등록합니다.
+      장소 배열에는 이름, 위도/경도 좌표, 사진(파일 필드명 또는 URL)을 포함할 수 있습니다.
       코스 추천은 **주당 두 번**까지만 등록할 수 있습니다.
     security:
       - JWT: []
     consumes:
       - multipart/form-data
+      - application/json
     parameters:
       - in: formData
-        name: title
+        name: course_name
         required: true
         type: string
-        description: 추천 묶음의 제목
+        description: 추천 코스명. `title` 필드와 동일하게 처리됩니다.
       - in: formData
-        name: description
-        required: false
+        name: course_description
+        required: true
         type: string
-        description: 추천 요약. `summary`와 동일하게 처리됩니다.
-      - in: formData
-        name: summary
-        required: false
-        type: string
-        description: 추천 코스 요약
+        description: 추천 코스 설명. `summary` 또는 `description` 필드와 동일하게 처리됩니다.
       - in: formData
         name: review
         required: true
         type: string
         description: 코스 후기 내용
       - in: formData
-        name: courses
+        name: places
         required: true
         type: string
         description: |
-          JSON 배열 문자열. 각 코스는 label, description,
-          points(출발/경유/도착 최대 5개)를 포함합니다.
-          각 point에는 선택적으로 `address`(지번/도로명),
-          `description`(지점 설명), `photo_field`를 지정해 해당 이름의
-          form-data 파일을 업로드할 수 있습니다.
-        example: '[{"label": "A코스", "points": [{"type": "start", "name": "출발", "address": "서울시 영등포구", "description": "출발지", "photo_field": "point_photo_1"}, {"type": "finish", "name": "도착"}]}]'
+          JSON 배열 문자열. 각 장소 객체는 name, latitude, longitude, photo(파일 필드명 또는 URL)를 포함합니다.
+        example: '[{"name": "출발", "latitude": 37.5, "longitude": 127.0, "photo": "place_photo_1"}]'
       - in: formData
         name: photo
         required: true
         type: file
-        description: 코스 사진 파일
+        description: 코스 대표 사진 파일 (`cover_photo`와 동일)
       - in: formData
-        name: point_photo_*
+        name: place_photo_*
         required: false
         type: file
-        description: 각 지점에 첨부할 사진 파일. `courses` JSON의 `photo_field` 이름과 일치해야 합니다.
+        description: 장소 JSON의 photo 값과 일치하는 파일 필드
     responses:
       201:
         description: 코스 추천 생성 성공
@@ -274,41 +303,65 @@ def create_course_recommendation():
         description: 인증 실패
     """
     user_id = get_current_user_id()
-    title = request.form.get("title") or request.form.get("location_name")
-    summary = request.form.get("summary")
-    if summary is None:
-        summary = request.form.get("description")
-    review = request.form.get("review")
-    courses_raw = request.form.get("courses")
 
-    if not title or not review:
-        return make_response({"error": "title and review required"}, 400)
+    if request.is_json:
+        payload = request.get_json() or {}
+        course_name = (
+            payload.get("course_name")
+            or payload.get("title")
+            or payload.get("location_name")
+        )
+        course_description = (
+            payload.get("course_description")
+            or payload.get("summary")
+            or payload.get("description")
+        )
+        review = payload.get("review")
+        places_raw = payload.get("places")
+    else:
+        course_name = (
+            request.form.get("course_name")
+            or request.form.get("title")
+            or request.form.get("location_name")
+        )
+        course_description = (
+            request.form.get("course_description")
+            or request.form.get("summary")
+            or request.form.get("description")
+        )
+        review = request.form.get("review")
+        places_raw = request.form.get("places")
 
-    if not courses_raw:
-        return make_response({"error": "courses payload required"}, 400)
+    if not course_name or not review:
+        return make_response({"error": "course_name and review required"}, 400)
+
+    if not course_description:
+        return make_response({"error": "course_description required"}, 400)
 
     try:
-        courses = _normalize_courses_payload(courses_raw)
+        places = _normalize_places_payload(places_raw)
     except ValueError as exc:
         return make_response({"error": str(exc)}, 400)
 
-    point_photo_fields = [
-        point["photo_field"]
-        for course in courses
-        for point in course["points"]
-        if point.get("photo_field")
+    place_photo_fields = [
+        place["photo_field"]
+        for place in places
+        if place.get("photo_field")
     ]
 
-    if "photo" not in request.files:
+    course_photo = request.files.get("cover_photo") or request.files.get("photo")
+    if course_photo is None:
         return make_response({"error": "photo required"}, 400)
 
-    missing_point_photos = [
-        field for field in set(point_photo_fields) if field not in request.files
+    missing_place_photos = [
+        field
+        for field in set(place_photo_fields)
+        if field not in request.files
     ]
-    if missing_point_photos:
-        missing_list = ", ".join(sorted(missing_point_photos))
+    if missing_place_photos:
+        missing_list = ", ".join(sorted(missing_place_photos))
         return make_response(
-            {"error": f"missing point photo files: {missing_list}"}, 400
+            {"error": f"missing place photo files: {missing_list}"}, 400
         )
 
     # 주 2회 제한
@@ -318,7 +371,7 @@ def create_course_recommendation():
             "SELECT COUNT(*) as count FROM course_recommendations"
             " WHERE user_id = %s"
             " AND created_at >= date_trunc('week', CURRENT_DATE)"
-            " AND status != 'rejected'",  # 반려된 것 제외
+            " AND status != 'rejected'",
             (user_id,),
         )
         result = cur.fetchone()
@@ -327,25 +380,24 @@ def create_course_recommendation():
                 {"error": "weekly course recommendation limit reached"}, 400
             )
 
-    photo = request.files["photo"]
-    photo_url, error = upload_file_to_ncp(photo, "course_recommendations")
+    photo_url, error = upload_file_to_ncp(course_photo, "course_recommendations")
     if error:
         return make_response({"error": f"photo upload failed: {error}"}, 500)
 
-    point_photo_urls: Dict[str, str] = {}
-    for field in sorted(set(point_photo_fields)):
-        point_photo = request.files.get(field)
-        if point_photo is None:  # pragma: no cover - guarded by earlier validation
-            continue
-
-        uploaded_url, upload_error = upload_file_to_ncp(
-            point_photo, "course_recommendations/points"
-        )
-        if upload_error:
-            return make_response(
-                {"error": f"point photo upload failed: {upload_error}"}, 500
+    for place in places:
+        field = place.get("photo_field")
+        if field:
+            place_photo = request.files.get(field)
+            if place_photo is None:  # pragma: no cover - guarded by validation
+                continue
+            uploaded_url, upload_error = upload_file_to_ncp(
+                place_photo, "course_recommendations/places"
             )
-        point_photo_urls[field] = uploaded_url
+            if upload_error:
+                return make_response(
+                    {"error": f"place photo upload failed: {upload_error}"}, 500
+                )
+            place["photo_url"] = uploaded_url
 
     prev_autocommit = db.autocommit
     db.autocommit = False
@@ -358,60 +410,29 @@ def create_course_recommendation():
                 VALUES (%s, %s, %s, %s, %s)
                 RETURNING *
                 """,
-                (user_id, title, summary, review, photo_url),
+                (user_id, course_name, course_description, review, photo_url),
             )
             rec = dict(cur.fetchone())
 
-            inserted_courses: List[Dict[str, Any]] = []
-            for course in courses:
+            inserted_places: List[Dict[str, Any]] = []
+            for place in places:
                 cur.execute(
                     """
-                    INSERT INTO course_recommendation_courses
-                        (recommendation_id, course_label, description, distance_km, duration_minutes, difficulty_level)
+                    INSERT INTO course_recommendation_places
+                        (recommendation_id, sequence_order, name, latitude, longitude, photo_url)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING *
                     """,
                     (
                         rec["id"],
-                        course["course_label"],
-                        course.get("description"),
-                        course.get("distance_km"),
-                        course.get("duration_minutes"),
-                        course.get("difficulty_level"),
+                        place["sequence_order"],
+                        place["name"],
+                        place["latitude"],
+                        place["longitude"],
+                        place.get("photo_url"),
                     ),
                 )
-                course_row = dict(cur.fetchone())
-
-                course_points: List[Dict[str, Any]] = []
-                for point in course["points"]:
-                    point_photo_url = point.get("photo_url")
-                    point_photo_field = point.get("photo_field")
-                    if point_photo_field:
-                        point_photo_url = point_photo_urls.get(point_photo_field)
-
-                    cur.execute(
-                        """
-                        INSERT INTO course_recommendation_points
-                            (course_id, sequence_order, point_type, name, address, latitude, longitude, notes, photo_url)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        RETURNING *
-                        """,
-                        (
-                            course_row["id"],
-                            point["sequence_order"],
-                            point["point_type"],
-                            point["name"],
-                            point.get("address"),
-                            point.get("latitude"),
-                            point.get("longitude"),
-                            point.get("notes"),
-                            point_photo_url,
-                        ),
-                    )
-                    course_points.append(dict(cur.fetchone()))
-
-                course_row["points"] = course_points
-                inserted_courses.append(course_row)
+                inserted_places.append(dict(cur.fetchone()))
 
             if photo_url:
                 cur.execute(
@@ -429,7 +450,7 @@ def create_course_recommendation():
     finally:
         db.autocommit = prev_autocommit
 
-    rec["courses"] = inserted_courses
+    rec["places"] = inserted_places
     return make_response(_serialize_recommendation(rec), 201)
 
 
@@ -464,7 +485,7 @@ def list_course_recommendations():
         )
         rows = [dict(row) for row in cur.fetchall()]
 
-    enriched = _attach_courses(db, rows)
+    enriched = _attach_places(db, rows)
     return make_response(_serialize_recommendations(enriched))
 
 
@@ -724,7 +745,7 @@ def list_all_course_recommendations():
         )
         rows = [dict(row) for row in cur.fetchall()]
 
-    enriched = _attach_courses(db, rows)
+    enriched = _attach_places(db, rows)
     return make_response(_serialize_recommendations(enriched))
 
 
@@ -788,7 +809,7 @@ def export_course_recommendations():
 
         rows = [dict(row) for row in cur.fetchall()]
 
-    enriched_rows = _attach_courses(db, rows)
+    enriched_rows = _attach_places(db, rows)
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -800,7 +821,7 @@ def export_course_recommendations():
             "summary",
             "photo_url",
             "review",
-            "courses",
+            "places",
             "status",
             "points_awarded",
             "reviewed_at",
@@ -808,21 +829,15 @@ def export_course_recommendations():
         ]
     )
     for row in enriched_rows:
-        course_payload = []
-        for course in row.get("courses", []):
-            course_payload.append(
-                {
-                    "label": course.get("course_label"),
-                    "points": [
-                        {
-                            "order": point.get("sequence_order"),
-                            "type": point.get("point_type"),
-                            "name": point.get("name"),
-                        }
-                        for point in course.get("points", [])
-                    ],
-                }
-            )
+        places_payload = [
+            {
+                "order": place.get("sequence_order"),
+                "name": place.get("name"),
+                "latitude": float(place["latitude"]) if place.get("latitude") is not None else None,
+                "longitude": float(place["longitude"]) if place.get("longitude") is not None else None,
+            }
+            for place in row.get("places", [])
+        ]
 
         writer.writerow(
             [
@@ -832,7 +847,7 @@ def export_course_recommendations():
                 row.get("summary"),
                 row["photo_url"],
                 row["review"],
-                json.dumps(course_payload, ensure_ascii=False),
+                json.dumps(places_payload, ensure_ascii=False),
                 row["status"],
                 row["points_awarded"],
                 row["reviewed_at"],

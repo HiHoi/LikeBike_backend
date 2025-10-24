@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS quizzes CASCADE;
 DROP TABLE IF EXISTS news CASCADE;
 DROP TABLE IF EXISTS user_levels CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS course_recommendation_places CASCADE;
 DROP TABLE IF EXISTS course_recommendation_points CASCADE;
 DROP TABLE IF EXISTS course_recommendation_courses CASCADE;
 DROP TABLE IF EXISTS course_recommendation_assets CASCADE;
@@ -266,32 +267,17 @@ CREATE TABLE course_recommendations (
     FOREIGN KEY (reviewed_by_admin_id) REFERENCES users (id) ON DELETE SET NULL
 );
 
-CREATE TABLE course_recommendation_courses (
+CREATE TABLE course_recommendation_places (
     id SERIAL PRIMARY KEY,
     recommendation_id INTEGER NOT NULL,
-    course_label VARCHAR(50) NOT NULL,
-    description TEXT,
-    distance_km DECIMAL(6, 2),
-    duration_minutes INTEGER,
-    difficulty_level VARCHAR(50),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (recommendation_id) REFERENCES course_recommendations (id) ON DELETE CASCADE
-);
-
-CREATE TABLE course_recommendation_points (
-    id SERIAL PRIMARY KEY,
-    course_id INTEGER NOT NULL,
     sequence_order INTEGER NOT NULL,
-    point_type VARCHAR(10) NOT NULL,
     name VARCHAR(255) NOT NULL,
-    address TEXT,
     latitude DECIMAL(9, 6),
     longitude DECIMAL(9, 6),
-    notes TEXT,
     photo_url TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (course_id) REFERENCES course_recommendation_courses (id) ON DELETE CASCADE,
-    CONSTRAINT course_points_sequence_check CHECK (sequence_order BETWEEN 1 AND 5)
+    FOREIGN KEY (recommendation_id) REFERENCES course_recommendations (id) ON DELETE CASCADE,
+    CONSTRAINT course_places_sequence_check CHECK (sequence_order >= 1)
 );
 
 CREATE TABLE course_recommendation_assets (

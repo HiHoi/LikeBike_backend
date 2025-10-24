@@ -207,7 +207,6 @@ def create_quiz():
     hint_link = data.get("hint_link")
     explanation = data.get("explanation")
     display_date = data.get("display_date") or get_kst_today()
-
     # display_date가 문자열인 경우 date 객체로 변환
     if isinstance(display_date, str):
         try:
@@ -888,6 +887,8 @@ def generate_quiz():
     question = result.get("question")
     correct_answer = result.get("correct_answer")
     answers_payload = result.get("answers")
+    hint_link = result.get("hint_link")
+    explanation = result.get("explanation")
     quiz_type = result.get("quiz_type", "multiple_choice")
 
     if not question or not correct_answer:
@@ -917,11 +918,18 @@ def generate_quiz():
     with db.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO quizzes (question, quiz_type, correct_answer, answers)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO quizzes (question, quiz_type, correct_answer, answers, hint_link, explanation)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (question, quiz_type, str(correct_answer), normalized_answers),
+            (
+                question,
+                quiz_type,
+                str(correct_answer),
+                normalized_answers,
+                hint_link,
+                explanation,
+            ),
         )
         quiz_id = cur.fetchone()["id"]
 
@@ -932,6 +940,8 @@ def generate_quiz():
             "quiz_type": quiz_type,
             "correct_answer": str(correct_answer),
             "answers": normalized_answers,
+            "hint_link": hint_link,
+            "explanation": explanation,
         },
         201,
     )
