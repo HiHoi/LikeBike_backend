@@ -45,7 +45,7 @@ erDiagram
     quizzes {
         integer id PK
         string question
-        enum quiz_type
+        enum quiz_type "'multiple_choice', 'ox', 'short_answer'"
         string correct_answer
         jsonb answers
         varchar hint_link

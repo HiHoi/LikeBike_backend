@@ -730,7 +730,7 @@ def attempt_quiz(quiz_id):
         answers_payload = quiz.get("answers")
 
         if quiz_type == "multiple_choice":
-            is_correct = submitted_answer == correct_answer
+            is_correct = submitted_answer.strip() == correct_answer.strip()
         elif quiz_type == "ox":
             is_correct = submitted_answer.strip().upper() == correct_answer
         else:

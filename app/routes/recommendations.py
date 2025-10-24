@@ -19,7 +19,7 @@ COURSE_RECOMMENDATION_FIELD_DEFINITIONS: List[Dict[str, Any]] = [
         "required": True,
         "location": "formData",
         "description": "방문한 장소 목록을 담은 JSON 배열 문자열.",
-        "example": '[{"name": "카카오프렌즈 코엑스", "address_name": "서울 강남구 영동대로 513", "x": "127.05902969025047", "y": "37.51207393248871", "photo": "place_photo_1", "description": "코엑스에 있는 카카오프렌즈샵"}]',
+        "example": '[{"name": "카카오프렌즈 코엑스", "address_name": "서울 강남구 영동대로 513", "x": "127.05902969025047", "y": "37.51207393248871", "photo": "https://example.com/photo.jpg", "description": "코엑스에 있는 카카오프렌즈샵"}]',
     },
     {
         "name": "photo",
@@ -27,13 +27,6 @@ COURSE_RECOMMENDATION_FIELD_DEFINITIONS: List[Dict[str, Any]] = [
         "required": True,
         "location": "formData",
         "description": "코스 대표 사진 파일.",
-    },
-    {
-        "name": "place_photo_{index}",
-        "type": "file",
-        "required": False,
-        "location": "formData",
-        "description": "각 장소별 사진 파일. places 배열의 순서에 맞춰 place_photo_1, place_photo_2 와 같이 업로드합니다.",
     },
 ]
 
@@ -62,9 +55,9 @@ COURSE_RECOMMENDATION_PLACE_ITEM_SCHEMA: Dict[str, Any] = {
             "example": "37.51207393248871",
         },
         "photo": {
-            "type": ["string", "object"],
-            "description": "장소 사진. 파일 필드명(place_photo_N) 또는 URL.",
-            "example": "place_photo_1",
+            "type": "string",
+            "description": "장소 사진 URL.",
+            "example": "https://example.com/place_photo.jpg",
         },
         "description": {
             "type": "string",
@@ -125,28 +118,19 @@ def _normalize_places_payload(raw_payload: Any) -> List[Dict[str, Any]]:
             raise ValueError("x(longitude) and y(latitude) must be numeric values")
 
         photo_value = place.get("photo")
-        photo_field: str | None = None
         photo_url: str | None = None
-        if isinstance(photo_value, dict):
-            field_value = photo_value.get("field") or photo_value.get("file") or photo_value.get("key")
-            url_value = photo_value.get("url")
-            if field_value is not None:
-                field_value = str(field_value).strip()
-            if url_value is not None:
-                url_value = str(url_value).strip()
-            if field_value:
-                photo_field = field_value
-            if url_value:
-                photo_url = url_value
-        elif isinstance(photo_value, str):
+        if isinstance(photo_value, str):
             trimmed = photo_value.strip()
             if trimmed:
                 if trimmed.lower().startswith(("http://", "https://")):
                     photo_url = trimmed
                 else:
-                    photo_field = trimmed
+                    # 이제 파일 필드는 지원하지 않으므로 URL이 아니면 오류 발생
+                    raise ValueError(
+                        f"place photo must be a valid URL: received '{trimmed}'"
+                    )
         elif photo_value is not None:
-            raise ValueError("photo must be a string or an object with 'field'/'url'")
+            raise ValueError("place photo must be a URL string")
 
         normalized_places.append(
             {
@@ -156,7 +140,7 @@ def _normalize_places_payload(raw_payload: Any) -> List[Dict[str, Any]]:
                 "description": description,
                 "latitude": latitude,
                 "longitude": longitude,
-                "photo_field": photo_field,
+                "photo_field": None,  # 항상 None
                 "photo_url": photo_url,
             }
         )
@@ -262,18 +246,13 @@ def create_course_recommendation():
         required: true
         type: string
         description: |
-          JSON 배열 문자열. 각 장소 객체는 name, address_name, x, y, photo, description을 포함합니다.
-        example: '[{"name": "카카오프렌즈 코엑스", "address_name": "서울 강남구 영동대로 513", "x": "127.05902969025047", "y": "37.51207393248871", "photo": "place_photo_1", "description": "코엑스에 있는 카카오프렌즈샵"}]'
+          JSON 배열 문자열. 각 장소 객체는 name, address_name, x, y, photo(URL), description을 포함합니다.
+        example: '[{"name": "카카오프렌즈 코엑스", "address_name": "서울 강남구 영동대로 513", "x": "127.05902969025047", "y": "37.51207393248871", "photo": "https://example.com/photo.jpg", "description": "코엑스에 있는 카카오프렌즈샵"}]'
       - in: formData
         name: photo
         required: true
         type: file
         description: 코스 대표 사진 파일 (`cover_photo`와 동일)
-      - in: formData
-        name: place_photo_*
-        required: false
-        type: file
-        description: 장소 JSON의 photo 값과 일치하는 파일 필드
     responses:
       201:
         description: 코스 추천 생성 성공
@@ -295,26 +274,9 @@ def create_course_recommendation():
     except ValueError as exc:
         return make_response({"error": str(exc)}, 400)
 
-    place_photo_fields = [
-        place["photo_field"]
-        for place in places
-        if place.get("photo_field")
-    ]
-
     course_photo = request.files.get("cover_photo") or request.files.get("photo")
     if course_photo is None:
         return make_response({"error": "photo required"}, 400)
-
-    missing_place_photos = [
-        field
-        for field in set(place_photo_fields)
-        if field not in request.files
-    ]
-    if missing_place_photos:
-        missing_list = ", ".join(sorted(missing_place_photos))
-        return make_response(
-            {"error": f"missing place photo files: {missing_list}"}, 400
-        )
 
     # 주 2회 제한
     db = get_db()
@@ -339,21 +301,6 @@ def create_course_recommendation():
     # 코스 이름과 설명을 첫 번째 장소의 정보로 설정
     course_name = places[0]["name"] if places else "이름 없는 코스"
     course_description = places[0]["address_name"] if places else ""
-
-    for place in places:
-        field = place.get("photo_field")
-        if field:
-            place_photo = request.files.get(field)
-            if place_photo is None:  # pragma: no cover - guarded by validation
-                continue
-            uploaded_url, upload_error = upload_file_to_ncp(
-                place_photo, "course_recommendations/places"
-            )
-            if upload_error:
-                return make_response(
-                    {"error": f"place photo upload failed: {upload_error}"}, 500
-                )
-            place["photo_url"] = uploaded_url
 
     prev_autocommit = db.autocommit
     db.autocommit = False
