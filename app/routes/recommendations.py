@@ -14,36 +14,12 @@ bp = Blueprint("recommendations", __name__)
 
 COURSE_RECOMMENDATION_FIELD_DEFINITIONS: List[Dict[str, Any]] = [
     {
-        "name": "course_name",
-        "type": "string",
-        "required": True,
-        "location": "formData",
-        "description": "추천 코스의 이름.",
-        "example": "한강 자전거 길",
-    },
-    {
-        "name": "course_description",
-        "type": "string",
-        "required": True,
-        "location": "formData",
-        "description": "코스에 대한 간단한 소개 또는 설명.",
-        "example": "초보도 즐기기 좋은 한강 뚝섬 루트",
-    },
-    {
-        "name": "review",
-        "type": "string",
-        "required": True,
-        "location": "formData",
-        "description": "코스를 직접 이용한 후기 내용.",
-        "example": "야경이 아름답고 자전거 도로가 잘 정비되어 있어요.",
-    },
-    {
         "name": "places",
         "type": "array",
         "required": True,
         "location": "formData",
         "description": "방문한 장소 목록을 담은 JSON 배열 문자열.",
-        "example": '[{"name": "출발", "latitude": 37.5, "longitude": 127.0, "photo": "place_photo_1"}]',
+        "example": '[{"name": "카카오프렌즈 코엑스", "address_name": "서울 강남구 영동대로 513", "x": "127.05902969025047", "y": "37.51207393248871", "photo": "place_photo_1", "description": "코엑스에 있는 카카오프렌즈샵"}]',
     },
     {
         "name": "photo",
@@ -63,27 +39,37 @@ COURSE_RECOMMENDATION_FIELD_DEFINITIONS: List[Dict[str, Any]] = [
 
 COURSE_RECOMMENDATION_PLACE_ITEM_SCHEMA: Dict[str, Any] = {
     "type": "object",
-    "required": ["name", "latitude", "longitude"],
+    "required": ["name", "address_name", "x", "y"],
     "properties": {
         "name": {
             "type": "string",
             "description": "장소 이름",
-            "example": "뚝섬 유원지",
+            "example": "카카오프렌즈 코엑스",
         },
-        "latitude": {
-            "type": "number",
-            "description": "위도",
-            "example": 37.536,
+        "address_name": {
+            "type": "string",
+            "description": "장소 주소",
+            "example": "서울 강남구 영동대로 513",
         },
-        "longitude": {
-            "type": "number",
-            "description": "경도",
-            "example": 127.066,
+        "x": {
+            "type": "string",
+            "description": "경도(longitude)",
+            "example": "127.05902969025047",
+        },
+        "y": {
+            "type": "string",
+            "description": "위도(latitude)",
+            "example": "37.51207393248871",
         },
         "photo": {
             "type": ["string", "object"],
             "description": "장소 사진. 파일 필드명(place_photo_N) 또는 URL.",
             "example": "place_photo_1",
+        },
+        "description": {
+            "type": "string",
+            "description": "장소에 대한 간단한 설명",
+            "example": "코엑스에 있는 카카오프렌즈샵",
         },
     },
 }
@@ -127,13 +113,16 @@ def _normalize_places_payload(raw_payload: Any) -> List[Dict[str, Any]]:
         if not name:
             raise ValueError("place name is required")
 
-        latitude_raw = place.get("latitude")
-        longitude_raw = place.get("longitude")
+        address_name = str(place.get("address_name") or "").strip()
+        description = str(place.get("description") or "").strip()
+
+        latitude_raw = place.get("y")  # y 좌표를 위도로 사용
+        longitude_raw = place.get("x")  # x 좌표를 경도로 사용
         try:
             latitude = float(latitude_raw)
             longitude = float(longitude_raw)
         except (TypeError, ValueError):
-            raise ValueError("latitude and longitude must be numeric values")
+            raise ValueError("x(longitude) and y(latitude) must be numeric values")
 
         photo_value = place.get("photo")
         photo_field: str | None = None
@@ -163,6 +152,8 @@ def _normalize_places_payload(raw_payload: Any) -> List[Dict[str, Any]]:
             {
                 "sequence_order": idx,
                 "name": name,
+                "address_name": address_name,
+                "description": description,
                 "latitude": latitude,
                 "longitude": longitude,
                 "photo_field": photo_field,
@@ -183,7 +174,7 @@ def _attach_places(db, recommendations: List[Dict[str, Any]]) -> List[Dict[str, 
     with db.cursor() as cur:
         cur.execute(
             """
-            SELECT id, recommendation_id, sequence_order, name, latitude, longitude, photo_url, created_at
+            SELECT id, recommendation_id, sequence_order, name, latitude, longitude, photo_url, created_at, address_name, description
             FROM course_recommendation_places
             WHERE recommendation_id = ANY(%s)
             ORDER BY recommendation_id ASC, sequence_order ASC, id ASC
@@ -229,6 +220,10 @@ def _serialize_recommendation(rec: Dict[str, Any]) -> Dict[str, Any]:
                 "place_id": idx,
                 "sequence_order": place.get("sequence_order"),
                 "name": place.get("name"),
+                "address_name": place.get("address_name"),
+                "description": place.get("description"),
+                "x": str(longitude) if longitude is not None else None,
+                "y": str(latitude) if latitude is not None else None,
                 "latitude": float(latitude) if latitude is not None else None,
                 "longitude": float(longitude) if longitude is not None else None,
                 "photo_url": place.get("photo_url"),
@@ -253,8 +248,8 @@ def create_course_recommendation():
       - Course Recommendations
     summary: 새로운 코스 추천 등록
     description: |
-      코스명과 설명, 방문한 장소 목록을 간단한 JSON 구조로 전달하여 추천 코스를 등록합니다.
-      장소 배열에는 이름, 위도/경도 좌표, 사진(파일 필드명 또는 URL)을 포함할 수 있습니다.
+      방문한 장소 목록을 간단한 JSON 구조로 전달하여 추천 코스를 등록합니다.
+      장소 배열에는 이름, 주소, 좌표(x, y), 사진(파일 필드명 또는 URL), 설명을 포함할 수 있습니다.
       코스 추천은 **주당 두 번**까지만 등록할 수 있습니다.
     security:
       - JWT: []
@@ -263,27 +258,12 @@ def create_course_recommendation():
       - application/json
     parameters:
       - in: formData
-        name: course_name
-        required: true
-        type: string
-        description: 추천 코스명. `title` 필드와 동일하게 처리됩니다.
-      - in: formData
-        name: course_description
-        required: true
-        type: string
-        description: 추천 코스 설명. `summary` 또는 `description` 필드와 동일하게 처리됩니다.
-      - in: formData
-        name: review
-        required: true
-        type: string
-        description: 코스 후기 내용
-      - in: formData
         name: places
         required: true
         type: string
         description: |
-          JSON 배열 문자열. 각 장소 객체는 name, latitude, longitude, photo(파일 필드명 또는 URL)를 포함합니다.
-        example: '[{"name": "출발", "latitude": 37.5, "longitude": 127.0, "photo": "place_photo_1"}]'
+          JSON 배열 문자열. 각 장소 객체는 name, address_name, x, y, photo, description을 포함합니다.
+        example: '[{"name": "카카오프렌즈 코엑스", "address_name": "서울 강남구 영동대로 513", "x": "127.05902969025047", "y": "37.51207393248871", "photo": "place_photo_1", "description": "코엑스에 있는 카카오프렌즈샵"}]'
       - in: formData
         name: photo
         required: true
@@ -306,37 +286,9 @@ def create_course_recommendation():
 
     if request.is_json:
         payload = request.get_json() or {}
-        course_name = (
-            payload.get("course_name")
-            or payload.get("title")
-            or payload.get("location_name")
-        )
-        course_description = (
-            payload.get("course_description")
-            or payload.get("summary")
-            or payload.get("description")
-        )
-        review = payload.get("review")
         places_raw = payload.get("places")
     else:
-        course_name = (
-            request.form.get("course_name")
-            or request.form.get("title")
-            or request.form.get("location_name")
-        )
-        course_description = (
-            request.form.get("course_description")
-            or request.form.get("summary")
-            or request.form.get("description")
-        )
-        review = request.form.get("review")
         places_raw = request.form.get("places")
-
-    if not course_name or not review:
-        return make_response({"error": "course_name and review required"}, 400)
-
-    if not course_description:
-        return make_response({"error": "course_description required"}, 400)
 
     try:
         places = _normalize_places_payload(places_raw)
@@ -384,6 +336,10 @@ def create_course_recommendation():
     if error:
         return make_response({"error": f"photo upload failed: {error}"}, 500)
 
+    # 코스 이름과 설명을 첫 번째 장소의 정보로 설정
+    course_name = places[0]["name"] if places else "이름 없는 코스"
+    course_description = places[0]["address_name"] if places else ""
+
     for place in places:
         field = place.get("photo_field")
         if field:
@@ -410,7 +366,7 @@ def create_course_recommendation():
                 VALUES (%s, %s, %s, %s, %s)
                 RETURNING *
                 """,
-                (user_id, course_name, course_description, review, photo_url),
+                (user_id, course_name, course_description, "", photo_url),
             )
             rec = dict(cur.fetchone())
 
@@ -419,8 +375,8 @@ def create_course_recommendation():
                 cur.execute(
                     """
                     INSERT INTO course_recommendation_places
-                        (recommendation_id, sequence_order, name, latitude, longitude, photo_url)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                        (recommendation_id, sequence_order, name, latitude, longitude, photo_url, address_name, description)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING *
                     """,
                     (
@@ -430,6 +386,8 @@ def create_course_recommendation():
                         place["latitude"],
                         place["longitude"],
                         place.get("photo_url"),
+                        place.get("address_name"),
+                        place.get("description"),
                     ),
                 )
                 inserted_places.append(dict(cur.fetchone()))
