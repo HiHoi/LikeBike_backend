@@ -107,27 +107,13 @@ erDiagram
         timestamp created_at
     }
 
-    course_recommendation_courses {
+    course_recommendation_places {
         integer id PK
         integer recommendation_id FK
-        varchar course_label
-        text description
-        decimal distance_km
-        integer duration_minutes
-        varchar difficulty_level
-        timestamp created_at
-    }
-
-    course_recommendation_points {
-        integer id PK
-        integer course_id FK
         integer sequence_order
-        varchar point_type
         varchar name
-        text address
         decimal latitude
         decimal longitude
-        text notes
         text photo_url
         timestamp created_at
     }
@@ -247,8 +233,7 @@ erDiagram
     quizzes ||--o{ quiz_explanations : "has"
     quizzes ||--o{ user_quiz_explanation_views : ""
 
-    course_recommendations ||--o{ course_recommendation_courses : "includes"
-    course_recommendation_courses ||--o{ course_recommendation_points : "visits"
+    course_recommendations ||--o{ course_recommendation_places : "visits"
     course_recommendations ||--o{ course_recommendation_assets : "assets"
 
     routes ||--o{ route_points : "contains"
@@ -300,8 +285,7 @@ erDiagram
 
 ### 7. 코스 추천 기능
 - **course_recommendations**: 추천 묶음의 메타데이터(제목, 요약, 후기, 검토 상태) 관리
-- **course_recommendation_courses**: 하나의 추천 묶음 안에 포함된 개별 루트 정보
-- **course_recommendation_points**: 각 루트의 출발·경유·도착 지점 (최대 5개, 지점별 `address`·`notes`(지점 설명)·`photo_url` 보관)
+- **course_recommendation_places**: 추천 코스에 포함된 장소 목록 (순서, 좌표, 사진 URL 관리)
 - **course_recommendation_assets**: 추천에 첨부된 사진, GPX 등 추가 자료
   - 사용자는 주 2회까지만 추천 가능
   - 관리자 검토 시 admin_notes 기록 가능
