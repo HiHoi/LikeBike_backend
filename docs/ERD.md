@@ -112,6 +112,8 @@ erDiagram
         integer recommendation_id FK
         integer sequence_order
         varchar name
+        varchar address_name
+        text description
         decimal latitude
         decimal longitude
         text photo_url

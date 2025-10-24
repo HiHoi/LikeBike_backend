@@ -37,19 +37,31 @@ def test_get_course_recommendation_request_fields(client, test_user):
 
     assert payload["content_type"] == "multipart/form-data"
     field_names = {field["name"] for field in payload["fields"]}
-    assert {"course_name", "course_description", "review", "places", "photo"}.issubset(
-        field_names
-    )
+    assert {"places", "photo"}.issubset(field_names)
+    assert "course_name" not in field_names
 
     place_schema = payload["place_item_schema"]
-    assert set(place_schema["required"]) == {"name", "latitude", "longitude"}
+    assert set(place_schema["required"]) == {"name", "address_name", "x", "y"}
     assert "photo" in place_schema["properties"]
+    assert "description" in place_schema["properties"]
 
 
 def _places_payload(include_photos: bool = False) -> str:
     places = [
-        {"name": "출발지", "latitude": 37.5, "longitude": 127.0},
-        {"name": "도착지", "latitude": 37.6, "longitude": 127.1},
+        {
+            "name": "출발지",
+            "address_name": "서울",
+            "x": "127.0",
+            "y": "37.5",
+            "description": "출발지 설명",
+        },
+        {
+            "name": "도착지",
+            "address_name": "부산",
+            "x": "129.0",
+            "y": "35.1",
+            "description": "도착지 설명",
+        },
     ]
 
     if include_photos:
@@ -116,9 +128,6 @@ def test_create_and_list_recommendations(mock_upload, client, test_user):
     res = client.post(
         "/users/course-recommendations",
         data={
-            "course_name": "한강",
-            "course_description": "설명",
-            "review": "멋진 코스",
             "places": _places_payload(include_photos=True),
             "photo": route_photo,
             "place_photo_1": start_photo,
@@ -129,6 +138,9 @@ def test_create_and_list_recommendations(mock_upload, client, test_user):
     )
     assert res.status_code == 201
     created = res.get_json()["data"][0]
+    assert created["course_name"] == "출발지"
+    assert created["course_description"] == "서울"
+
     created_places = created["places"]
     assert created_places[0]["place_id"] == 0
     assert created_places[1]["place_id"] == 1
@@ -137,20 +149,26 @@ def test_create_and_list_recommendations(mock_upload, client, test_user):
     assert created_places[0]["sequence_order"] == 1
     assert created_places[1]["sequence_order"] == 2
     assert created_places[0]["latitude"] == 37.5
-    assert created_places[1]["longitude"] == 127.1
+    assert created_places[0]["longitude"] == 127.0
+    assert created_places[1]["latitude"] == 35.1
+    assert created_places[1]["longitude"] == 129.0
+    assert created_places[0]["address_name"] == "서울"
+    assert created_places[0]["description"] == "출발지 설명"
 
     res = client.get("/users/course-recommendations", headers=headers)
     assert res.status_code == 200
     data = res.get_json()["data"]
     assert len(data) == 1
-    assert data[0]["course_name"] == "한강"
-    assert data[0]["course_description"] == "설명"
+    assert data[0]["course_name"] == "출발지"
+    assert data[0]["course_description"] == "서울"
     assert len(data[0]["places"]) == 2
     list_places = data[0]["places"]
     assert list_places[0]["place_id"] == 0
     assert list_places[1]["place_id"] == 1
     assert list_places[0]["photo_url"] == "https://test.com/point_start.jpg"
     assert list_places[1]["photo_url"] == "https://test.com/point_finish.jpg"
+    assert list_places[0]["address_name"] == "서울"
+    assert list_places[1]["description"] == "도착지 설명"
 
 
 @patch("app.routes.recommendations.upload_file_to_ncp")
@@ -165,9 +183,6 @@ def test_verify_recommendation(mock_upload, client, test_user, admin_user):
     res = client.post(
         "/users/course-recommendations",
         data={
-            "course_name": "한강",
-            "course_description": "설명",
-            "review": "멋진 코스",
             "places": _places_payload(),
             "photo": (img, "photo.jpg"),
         },
@@ -211,9 +226,6 @@ def test_weekly_recommendation_limit(mock_upload, client, test_user):
         res = client.post(
             "/users/course-recommendations",
             data={
-                "course_name": f"코스{i}",
-                "course_description": f"코스{i} 설명",
-                "review": "굿",
                 "places": _places_payload(),
                 "photo": (img, f"p{i}.jpg"),
             },
@@ -226,9 +238,6 @@ def test_weekly_recommendation_limit(mock_upload, client, test_user):
     res = client.post(
         "/users/course-recommendations",
         data={
-            "course_name": "코스3",
-            "course_description": "코스3 설명",
-            "review": "굿",
             "places": _places_payload(),
             "photo": (img, "p3.jpg"),
         },
@@ -253,9 +262,6 @@ def test_admin_list_all_recommendations(mock_upload, client, test_user, admin_us
     client.post(
         "/users/course-recommendations",
         data={
-            "course_name": "한강",
-            "course_description": "설명",
-            "review": "멋진 코스",
             "places": _places_payload(),
             "photo": (img, "photo.jpg"),
         },
@@ -323,9 +329,6 @@ def test_week_recommendation_count(mock_upload, client, test_user):
     client.post(
         "/users/course-recommendations",
         data={
-            "course_name": "한강",
-            "course_description": "설명",
-            "review": "굿",
             "places": _places_payload(),
             "photo": (img, "p.jpg"),
         },
