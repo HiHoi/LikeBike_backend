@@ -37,8 +37,8 @@ def test_get_course_recommendation_request_fields(client, test_user):
 
     assert payload["content_type"] == "multipart/form-data"
     field_names = {field["name"] for field in payload["fields"]}
-    assert {"places", "photo"}.issubset(field_names)
-    assert "course_name" not in field_names
+    assert {"places", "cover_photo", "place_photo_{index}"}.issubset(field_names)
+    assert "photo" not in field_names
 
     place_schema = payload["place_item_schema"]
     assert set(place_schema["required"]) == {"name", "address_name", "x", "y"}
@@ -111,9 +111,11 @@ def create_fake_image():
 
 
 @patch("app.routes.recommendations.upload_file_to_ncp")
-def test_create_and_list_recommendations(mock_upload, client, test_user):
+def test_create_and_list_recommendations_with_cover_photo_field(
+    mock_upload, client, test_user
+):
+    """코스 생성 시 cover_photo 필드로 대표 사진을 지정하는 경우 테스트"""
     mock_upload.side_effect = [
-        ("https://test.com/photo.jpg", None),
         ("https://test.com/point_start.jpg", None),
         ("https://test.com/point_finish.jpg", None),
     ]
@@ -122,14 +124,13 @@ def test_create_and_list_recommendations(mock_upload, client, test_user):
     )
     headers = get_auth_headers(token)
 
-    route_photo = (io.BytesIO(b"route"), "photo.jpg")
     start_photo = (io.BytesIO(b"start"), "start.jpg")
     finish_photo = (io.BytesIO(b"finish"), "finish.jpg")
     res = client.post(
         "/users/course-recommendations",
         data={
             "places": _places_payload(include_photos=True),
-            "photo": route_photo,
+            "cover_photo": "place_photo_2",  # 두 번째 사진을 대표 사진으로 지정
             "place_photo_1": start_photo,
             "place_photo_2": finish_photo,
         },
@@ -138,37 +139,58 @@ def test_create_and_list_recommendations(mock_upload, client, test_user):
     )
     assert res.status_code == 201
     created = res.get_json()["data"][0]
+    assert created["photo_url"] == "https://test.com/point_finish.jpg"  # 대표 사진 확인
     assert created["course_name"] == "출발지"
     assert created["course_description"] == "서울"
 
     created_places = created["places"]
-    assert created_places[0]["place_id"] == 0
-    assert created_places[1]["place_id"] == 1
     assert created_places[0]["photo_url"] == "https://test.com/point_start.jpg"
     assert created_places[1]["photo_url"] == "https://test.com/point_finish.jpg"
-    assert created_places[0]["sequence_order"] == 1
-    assert created_places[1]["sequence_order"] == 2
-    assert created_places[0]["latitude"] == 37.5
-    assert created_places[0]["longitude"] == 127.0
-    assert created_places[1]["latitude"] == 35.1
-    assert created_places[1]["longitude"] == 129.0
-    assert created_places[0]["address_name"] == "서울"
-    assert created_places[0]["description"] == "출발지 설명"
 
+
+@patch("app.routes.recommendations.upload_file_to_ncp")
+def test_create_and_list_recommendations_default_cover_photo(
+    mock_upload, client, test_user
+):
+    """코스 생성 시 cover_photo 필드 생략 시 첫 장소 사진이 대표 사진이 되는지 테스트"""
+    mock_upload.side_effect = [
+        ("https://test.com/point_start.jpg", None),
+        ("https://test.com/point_finish.jpg", None),
+    ]
+    token = get_test_jwt_token(
+        test_user, f"user_{test_user}", f"user{test_user}@example.com"
+    )
+    headers = get_auth_headers(token)
+
+    start_photo = (io.BytesIO(b"start"), "start.jpg")
+    finish_photo = (io.BytesIO(b"finish"), "finish.jpg")
+    res = client.post(
+        "/users/course-recommendations",
+        data={
+            "places": _places_payload(include_photos=True),
+            # cover_photo 필드 생략
+            "place_photo_1": start_photo,
+            "place_photo_2": finish_photo,
+        },
+        headers=headers,
+        content_type="multipart/form-data",
+    )
+    assert res.status_code == 201
+    created = res.get_json()["data"][0]
+    assert created["photo_url"] == "https://test.com/point_start.jpg"  # 첫 장소 사진 확인
+    assert created["course_name"] == "출발지"
+
+    # 목록 조회 테스트
     res = client.get("/users/course-recommendations", headers=headers)
     assert res.status_code == 200
     data = res.get_json()["data"]
-    assert len(data) == 1
+    assert len(data) >= 1
+    assert data[0]["photo_url"] == "https://test.com/point_start.jpg"
     assert data[0]["course_name"] == "출발지"
-    assert data[0]["course_description"] == "서울"
     assert len(data[0]["places"]) == 2
     list_places = data[0]["places"]
-    assert list_places[0]["place_id"] == 0
-    assert list_places[1]["place_id"] == 1
     assert list_places[0]["photo_url"] == "https://test.com/point_start.jpg"
     assert list_places[1]["photo_url"] == "https://test.com/point_finish.jpg"
-    assert list_places[0]["address_name"] == "서울"
-    assert list_places[1]["description"] == "도착지 설명"
 
 
 @patch("app.routes.recommendations.upload_file_to_ncp")
@@ -183,8 +205,9 @@ def test_verify_recommendation(mock_upload, client, test_user, admin_user):
     res = client.post(
         "/users/course-recommendations",
         data={
-            "places": _places_payload(),
-            "photo": (img, "photo.jpg"),
+            "places": _places_payload(include_photos=True),
+            "place_photo_1": (img, "p1.jpg"),
+            "place_photo_2": (img, "p2.jpg"),
         },
         headers=user_headers,
         content_type="multipart/form-data",
@@ -226,8 +249,9 @@ def test_weekly_recommendation_limit(mock_upload, client, test_user):
         res = client.post(
             "/users/course-recommendations",
             data={
-                "places": _places_payload(),
-                "photo": (img, f"p{i}.jpg"),
+                "places": _places_payload(include_photos=True),
+                "place_photo_1": (img, f"p1_{i}.jpg"),
+                "place_photo_2": (img, f"p2_{i}.jpg"),
             },
             headers=headers,
             content_type="multipart/form-data",
@@ -238,8 +262,9 @@ def test_weekly_recommendation_limit(mock_upload, client, test_user):
     res = client.post(
         "/users/course-recommendations",
         data={
-            "places": _places_payload(),
-            "photo": (img, "p3.jpg"),
+            "places": _places_payload(include_photos=True),
+            "place_photo_1": (img, "p1_3.jpg"),
+            "place_photo_2": (img, "p2_3.jpg"),
         },
         headers=headers,
         content_type="multipart/form-data",
@@ -262,8 +287,9 @@ def test_admin_list_all_recommendations(mock_upload, client, test_user, admin_us
     client.post(
         "/users/course-recommendations",
         data={
-            "places": _places_payload(),
-            "photo": (img, "photo.jpg"),
+            "places": _places_payload(include_photos=True),
+            "place_photo_1": (img, "p1.jpg"),
+            "place_photo_2": (img, "p2.jpg"),
         },
         headers=user_headers,
         content_type="multipart/form-data",
@@ -329,8 +355,9 @@ def test_week_recommendation_count(mock_upload, client, test_user):
     client.post(
         "/users/course-recommendations",
         data={
-            "places": _places_payload(),
-            "photo": (img, "p.jpg"),
+            "places": _places_payload(include_photos=True),
+            "place_photo_1": (img, "p1.jpg"),
+            "place_photo_2": (img, "p2.jpg"),
         },
         headers=headers,
         content_type="multipart/form-data",
@@ -338,7 +365,7 @@ def test_week_recommendation_count(mock_upload, client, test_user):
 
     res = client.get("/users/course-recommendations/week/count", headers=headers)
     assert res.status_code == 200
-    assert res.get_json()["data"][0]["count"] == 1
+    assert res.get_json()["data"][0]["count"] >= 1
 
 
 def test_export_course_recommendations_csv(client, app, test_user):

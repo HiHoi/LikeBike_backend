@@ -22,11 +22,18 @@ COURSE_RECOMMENDATION_FIELD_DEFINITIONS: List[Dict[str, Any]] = [
         "example": '[{"name": "카카오프렌즈 코엑스", "address_name": "서울 강남구 영동대로 513", "x": "127.05902969025047", "y": "37.51207393248871", "photo": "https://example.com/photo.jpg", "description": "코엑스에 있는 카카오프렌즈샵"}]',
     },
     {
-        "name": "photo",
-        "type": "file",
-        "required": True,
+        "name": "cover_photo",
+        "type": "string",
+        "required": False,
         "location": "formData",
-        "description": "코스 대표 사진 파일.",
+        "description": "코스 대표 사진으로 사용할 장소의 사진 필드명 (예: place_photo_1). 생략 시 첫 장소의 사진이 대표 사진으로 사용됩니다.",
+    },
+    {
+        "name": "place_photo_{index}",
+        "type": "file",
+        "required": False,
+        "location": "formData",
+        "description": "각 장소별 사진 파일. places 배열의 순서에 맞춰 place_photo_1, place_photo_2 와 같이 업로드합니다.",
     },
 ]
 
@@ -56,8 +63,8 @@ COURSE_RECOMMENDATION_PLACE_ITEM_SCHEMA: Dict[str, Any] = {
         },
         "photo": {
             "type": "string",
-            "description": "장소 사진 URL.",
-            "example": "https://example.com/place_photo.jpg",
+            "description": "장소 사진. 파일 필드명(예: place_photo_1) 또는 URL.",
+            "example": "place_photo_1",
         },
         "description": {
             "type": "string",
@@ -118,6 +125,7 @@ def _normalize_places_payload(raw_payload: Any) -> List[Dict[str, Any]]:
             raise ValueError("x(longitude) and y(latitude) must be numeric values")
 
         photo_value = place.get("photo")
+        photo_field: str | None = None
         photo_url: str | None = None
         if isinstance(photo_value, str):
             trimmed = photo_value.strip()
@@ -125,12 +133,10 @@ def _normalize_places_payload(raw_payload: Any) -> List[Dict[str, Any]]:
                 if trimmed.lower().startswith(("http://", "https://")):
                     photo_url = trimmed
                 else:
-                    # 이제 파일 필드는 지원하지 않으므로 URL이 아니면 오류 발생
-                    raise ValueError(
-                        f"place photo must be a valid URL: received '{trimmed}'"
-                    )
+                    # URL이 아니면 파일 필드명으로 간주
+                    photo_field = trimmed
         elif photo_value is not None:
-            raise ValueError("place photo must be a URL string")
+            raise ValueError("place photo must be a URL string or a file field name string")
 
         normalized_places.append(
             {
@@ -140,7 +146,7 @@ def _normalize_places_payload(raw_payload: Any) -> List[Dict[str, Any]]:
                 "description": description,
                 "latitude": latitude,
                 "longitude": longitude,
-                "photo_field": None,  # 항상 None
+                "photo_field": photo_field,
                 "photo_url": photo_url,
             }
         )
@@ -246,13 +252,18 @@ def create_course_recommendation():
         required: true
         type: string
         description: |
-          JSON 배열 문자열. 각 장소 객체는 name, address_name, x, y, photo(URL), description을 포함합니다.
-        example: '[{"name": "카카오프렌즈 코엑스", "address_name": "서울 강남구 영동대로 513", "x": "127.05902969025047", "y": "37.51207393248871", "photo": "https://example.com/photo.jpg", "description": "코엑스에 있는 카카오프렌즈샵"}]'
+          JSON 배열 문자열. 각 장소 객체는 name, address_name, x, y, photo(URL 또는 파일 필드명), description을 포함합니다.
+        example: '[{"name": "카카오프렌즈 코엑스", "address_name": "서울 강남구 영동대로 513", "x": "127.05902969025047", "y": "37.51207393248871", "photo": "place_photo_1", "description": "코엑스에 있는 카카오프렌즈샵"}]'
       - in: formData
-        name: photo
-        required: true
+        name: cover_photo
+        required: false
+        type: string
+        description: 코스 대표 사진으로 사용할 장소의 사진 필드명 (예: place_photo_1). 생략 시 첫 장소의 사진이 대표 사진으로 사용됩니다.
+      - in: formData
+        name: place_photo_*
+        required: false
         type: file
-        description: 코스 대표 사진 파일 (`cover_photo`와 동일)
+        description: 각 장소별 사진 파일. places 배열의 photo 필드에 지정된 이름(예: place_photo_1)과 일치해야 합니다.
     responses:
       201:
         description: 코스 추천 생성 성공
@@ -274,10 +285,6 @@ def create_course_recommendation():
     except ValueError as exc:
         return make_response({"error": str(exc)}, 400)
 
-    course_photo = request.files.get("cover_photo") or request.files.get("photo")
-    if course_photo is None:
-        return make_response({"error": "photo required"}, 400)
-
     # 주 2회 제한
     db = get_db()
     with db.cursor() as cur:
@@ -294,9 +301,49 @@ def create_course_recommendation():
                 {"error": "weekly course recommendation limit reached"}, 400
             )
 
-    photo_url, error = upload_file_to_ncp(course_photo, "course_recommendations")
-    if error:
-        return make_response({"error": f"photo upload failed: {error}"}, 500)
+    # 1. 각 장소의 사진 파일 처리
+    for place in places:
+        field = place.get("photo_field")
+        if field and field in request.files:
+            place_photo = request.files[field]
+            place_photo_url, error = upload_file_to_ncp(
+                place_photo, "course_recommendation_places"
+            )
+            if error:
+                return make_response(
+                    {"error": f"place photo upload failed for {field}: {error}"}, 500
+                )
+            place["photo_url"] = place_photo_url
+
+    # 2. 코스 대표 사진 결정
+    photo_url = None
+    cover_photo_field_name = request.form.get("cover_photo")
+
+    if cover_photo_field_name:
+        # cover_photo 필드에 지정된 이름의 장소 사진을 대표 사진으로 사용
+        found_cover = next(
+            (p for p in places if p.get("photo_field") == cover_photo_field_name), None
+        )
+        if found_cover and found_cover.get("photo_url"):
+            photo_url = found_cover["photo_url"]
+        else:
+            return make_response(
+                {
+                    "error": f"cover_photo field '{cover_photo_field_name}' does not correspond to a valid uploaded place photo"
+                },
+                400,
+            )
+    elif places and places[0].get("photo_url"):
+        # cover_photo가 없고, 첫 장소에 사진 URL이 있으면 그것을 사용
+        photo_url = places[0]["photo_url"]
+    else:
+        # 대표 사진으로 쓸 사진이 없는 경우
+        return make_response(
+            {
+                "error": "A cover photo is required, either via 'cover_photo' field or by providing a photo for the first place"
+            },
+            400,
+        )
 
     # 코스 이름과 설명을 첫 번째 장소의 정보로 설정
     course_name = places[0]["name"] if places else "이름 없는 코스"
