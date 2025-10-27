@@ -78,6 +78,7 @@ def test_admin_create_update_delete_quiz(client, test_admin_user):
         "correct_answer": "A",
         "answers": ["A", "B", "C"],
         "hint_link": "http://hint1.com",
+        "hint_description": "힌트 설명",
         "explanation": "정답은 A 입니다",
         "display_date": "2024-01-01",
     }
@@ -93,6 +94,7 @@ def test_admin_create_update_delete_quiz(client, test_admin_user):
     assert data["correct_answer"] == "A"
     assert data["answers"] == ["A", "B", "C"]
     assert data["hint_link"] == "http://hint1.com"
+    assert data["hint_description"] == "힌트 설명"
     assert data["explanation"] == "정답은 A 입니다"
     assert data["display_date"] == "2024-01-01"
     quiz_id = data["id"]
@@ -103,6 +105,7 @@ def test_admin_create_update_delete_quiz(client, test_admin_user):
         "correct_answer": "B",
         "answers": ["X", "Y", "Z"],
         "hint_link": "http://hint_updated.com",
+        "hint_description": "업데이트 힌트",
         "explanation": "업데이트 해설",
     }
     res = client.put(
@@ -116,6 +119,7 @@ def test_admin_create_update_delete_quiz(client, test_admin_user):
     assert data["correct_answer"] == "B"
     assert data["answers"] == ["X", "Y", "Z"]
     assert data["hint_link"] == "http://hint_updated.com"
+    assert data["hint_description"] == "업데이트 힌트"
     assert data["explanation"] == "업데이트 해설"
 
     # delete
@@ -140,6 +144,7 @@ def test_user_attempt_quiz(client, test_user, test_admin_user):
             "correct_answer": "42",
             "answers": ["40", "41", "42"],
             "hint_link": "http://hint_answer.com",
+            "hint_description": "정답 힌트",
             "explanation": "answer is 42",
         },
         headers=admin_headers,
@@ -181,6 +186,8 @@ def test_ox_quiz_attempt(client, test_user, test_admin_user):
             "quiz_type": "ox",
             "correct_answer": "O",
             "answers": ["O", "X"],
+            "hint_link": "http://ox_hint.com",
+            "hint_description": "OX 퀴즈 힌트",
             "explanation": "안전모는 필수입니다.",
         },
         headers=admin_headers,
@@ -204,7 +211,7 @@ def test_ox_quiz_attempt(client, test_user, test_admin_user):
     assert res.get_json()["data"]["is_correct"] is False
 
 
-def test_short_answer_quiz_attempt(client, test_user, test_admin_user):
+def test_input_quiz_attempt(client, test_user, test_admin_user):
     admin_headers = get_admin_headers(
         get_admin_jwt_token(test_admin_user, "admin", "admin@example.com")
     )
@@ -216,9 +223,11 @@ def test_short_answer_quiz_attempt(client, test_user, test_admin_user):
         "/admin/quizzes",
         json={
             "question": "자전거 필수 장비는?",
-            "quiz_type": "short_answer",
+            "quiz_type": "input",
             "correct_answer": "헬멧",
             "answers": {"accepted_answers": ["helmet", "헬 멧"], "case_sensitive": False},
+            "hint_link": "http://input_hint.com",
+            "hint_description": "단답형 힌트",
             "explanation": "헬멧을 착용해야 합니다.",
         },
         headers=admin_headers,
@@ -257,6 +266,7 @@ def test_list_quizzes(client, test_user, test_admin_user):
         "correct_answer": "Test Answer",
         "answers": ["A", "B", "Test Answer"],
         "hint_link": "http://test_hint.com",
+        "hint_description": "테스트 힌트",
         "explanation": "테스트 해설",
         "display_date": "2024-01-01",
     }
@@ -285,6 +295,7 @@ def test_list_quizzes(client, test_user, test_admin_user):
     assert "Test Answer" in found_quiz["answers"]
     assert "hint_link" in found_quiz
     assert found_quiz["hint_link"] == "http://test_hint.com"
+    assert found_quiz["hint_description"] == "테스트 힌트"
     assert found_quiz["explanation"] == "테스트 해설"
     assert found_quiz["display_date"] == "2024-01-01"
 
@@ -307,6 +318,7 @@ def test_admin_unauthorized_access(client, test_user):
             "correct_answer": "Test",
             "answers": ["A"],
             "hint_link": "link",
+            "hint_description": "힌트",
             "display_date": "2024-01-01",
         },
         headers=user_headers,
@@ -322,6 +334,7 @@ def test_admin_unauthorized_access(client, test_user):
             "correct_answer": "Test",
             "answers": ["A"],
             "hint_link": "link",
+            "hint_description": "힌트",
             "display_date": "2024-01-01",
         },
         headers=user_headers,
@@ -343,6 +356,7 @@ def test_quiz_attempt_unauthorized(client, test_admin_user):
             "correct_answer": "42",
             "answers": ["42"],
             "hint_link": "link",
+            "hint_description": "힌트",
             "display_date": "2024-01-01",
         },
         headers=admin_headers,
@@ -385,6 +399,7 @@ def test_generate_quiz(client, monkeypatch, test_admin_user):
     # AI 생성에서는 answers와 hint_link가 없을 수 있으므로 존재 여부만 확인
     assert "answers" in data
     assert "hint_link" in data
+    assert "hint_description" in data
 
 
 def test_quiz_explanation_view_and_points(client, test_user, test_admin_user):
@@ -404,6 +419,7 @@ def test_quiz_explanation_view_and_points(client, test_user, test_admin_user):
             "correct_answer": "헬멧",
             "answers": ["모자", "선글라스", "헬멧", "장갑"],
             "hint_link": "http://example.com/hint",
+            "hint_description": "헬멧 착용 팁",
             "explanation": "헬멧 착용 이유",
             "display_date": "2024-01-01",
         },
@@ -457,6 +473,7 @@ def test_quiz_attempt_once_only(client, test_user, test_admin_user):
             "correct_answer": "정답",
             "answers": ["오답1", "오답2", "정답", "오답3"],
             "hint_link": "http://test_attempt_hint.com",
+            "hint_description": "테스트 힌트",
             "display_date": "2024-01-01",
         },
         headers=admin_headers,
@@ -501,6 +518,7 @@ def test_quiz_correct_answer_points_only_once(client, test_user, test_admin_user
             "correct_answer": "정답",
             "answers": ["정답", "오답1", "오답2", "오답3"],
             "hint_link": "http://test_point_hint.com",
+            "hint_description": "포인트 힌트",
             "explanation": "포인트 해설",
             "display_date": "2024-01-01",
         },
@@ -565,6 +583,7 @@ def test_quiz_answers_array_support(client, test_admin_user):
         "correct_answer": "헬멧",
         "answers": ["헬멧", "무릎보호대", "반사조끼", "장갑"],
         "hint_link": "http://answers_hint.com",
+        "hint_description": "장비 힌트",
         "explanation": "정답은 헬멧",
         "display_date": "2024-01-01",
     }
@@ -580,6 +599,7 @@ def test_quiz_answers_array_support(client, test_admin_user):
     assert "헬멧" in data["answers"]
     assert "hint_link" in data
     assert data["hint_link"] == "http://answers_hint.com"
+    assert data["hint_description"] == "장비 힌트"
     assert data["explanation"] == "정답은 헬멧"
     assert data["display_date"] == "2024-01-01"
 
@@ -608,6 +628,7 @@ def test_today_quiz_status(client, test_user, test_admin_user):
             "correct_answer": "정답",
             "answers": ["정답", "오답"],
             "hint_link": "http://hint.com",
+            "hint_description": "오늘 힌트",
             "explanation": "오늘의 해설",
             "display_date": today,
         },
@@ -656,6 +677,7 @@ def test_today_quiz_status_after_correct_then_wrong(client, test_user, test_admi
             "correct_answer": "정답",
             "answers": ["정답", "오답"],
             "hint_link": "http://hint.com",
+            "hint_description": "오늘 힌트",
             "explanation": "오늘의 해설",
             "display_date": today,
         },

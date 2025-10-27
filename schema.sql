@@ -72,15 +72,16 @@ CREATE TABLE user_verifications (
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
 
-CREATE TYPE quiz_type_enum AS ENUM ('multiple_choice', 'ox', 'short_answer');
+CREATE TYPE quiz_type_enum AS ENUM ('select', 'ox', 'input');
 
 CREATE TABLE quizzes (
     id SERIAL PRIMARY KEY,
     question TEXT NOT NULL,
-    quiz_type quiz_type_enum NOT NULL DEFAULT 'multiple_choice',
+    quiz_type quiz_type_enum NOT NULL DEFAULT 'select',
     correct_answer TEXT NOT NULL,
     answers JSONB DEFAULT '[]'::jsonb,
     hint_link VARCHAR(512),
+    hint_description TEXT,
     explanation TEXT,
     display_date DATE DEFAULT CURRENT_DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
