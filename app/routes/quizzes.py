@@ -4,6 +4,7 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Sequence
 
 import aiohttp
+from psycopg2.extras import Json
 from flask import Blueprint, request
 
 from ..db import get_db
@@ -294,6 +295,8 @@ def create_quiz():
     db = get_db()
     supports_hint_description = _quizzes_supports_hint_description(db)
     with db.cursor() as cur:
+        answers_json = Json(normalized_answers)
+
         if supports_hint_description:
             cur.execute(
                 """
@@ -305,7 +308,7 @@ def create_quiz():
                     question,
                     quiz_type,
                     correct_answer,
-                    normalized_answers,
+                    answers_json,
                     hint_link,
                     hint_description,
                     explanation,
@@ -323,7 +326,7 @@ def create_quiz():
                     question,
                     quiz_type,
                     correct_answer,
-                    normalized_answers,
+                    answers_json,
                     hint_link,
                     explanation,
                     display_date,
@@ -509,6 +512,8 @@ def update_quiz(quiz_id):
     db = get_db()
     supports_hint_description = _quizzes_supports_hint_description(db)
     with db.cursor() as cur:
+        answers_json = Json(normalized_answers)
+
         if supports_hint_description:
             cur.execute(
                 """
@@ -527,7 +532,7 @@ def update_quiz(quiz_id):
                     question,
                     quiz_type,
                     correct_answer,
-                    normalized_answers,
+                    answers_json,
                     hint_link,
                     hint_description,
                     explanation,
@@ -551,7 +556,7 @@ def update_quiz(quiz_id):
                     question,
                     quiz_type,
                     correct_answer,
-                    normalized_answers,
+                    answers_json,
                     hint_link,
                     explanation,
                     quiz_id,
@@ -1045,6 +1050,8 @@ def generate_quiz():
     db = get_db()
     supports_hint_description = _quizzes_supports_hint_description(db)
     with db.cursor() as cur:
+        answers_json = Json(normalized_answers)
+
         if supports_hint_description:
             cur.execute(
                 """
@@ -1056,7 +1063,7 @@ def generate_quiz():
                     question,
                     quiz_type,
                     str(correct_answer),
-                    normalized_answers,
+                    answers_json,
                     hint_link,
                     hint_description,
                     explanation,
@@ -1073,7 +1080,7 @@ def generate_quiz():
                     question,
                     quiz_type,
                     str(correct_answer),
-                    normalized_answers,
+                    answers_json,
                     hint_link,
                     explanation,
                 ),
