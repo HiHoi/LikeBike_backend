@@ -236,7 +236,14 @@ def create_quiz():
     data = request.get_json() or {}
     question = data.get("question")
     correct_answer = data.get("correct_answer", "")
-    quiz_type = data.get("quiz_type", "select")
+    quiz_type_raw = data.get("quiz_type")
+    if quiz_type_raw is None:
+        return make_response({"error": "quiz_type is required"}, 400)
+    if not isinstance(quiz_type_raw, str):
+        return make_response({"error": "quiz_type must be a string"}, 400)
+    quiz_type = quiz_type_raw.strip().lower()
+    if not quiz_type:
+        return make_response({"error": "quiz_type is required"}, 400)
     answers_payload = data.get("answers")
     hint_link = data.get("hint_link")
     hint_description = data.get("hint_description")
@@ -455,7 +462,14 @@ def update_quiz(quiz_id):
     data = request.get_json() or {}
     question = data.get("question")
     correct_answer = data.get("correct_answer", "")
-    quiz_type = data.get("quiz_type") or "select"
+    quiz_type_raw = data.get("quiz_type")
+    if quiz_type_raw is None:
+        return make_response({"error": "quiz_type is required"}, 400)
+    if not isinstance(quiz_type_raw, str):
+        return make_response({"error": "quiz_type must be a string"}, 400)
+    quiz_type = quiz_type_raw.strip().lower()
+    if not quiz_type:
+        return make_response({"error": "quiz_type is required"}, 400)
     answers_payload = data.get("answers")
     hint_link = data.get("hint_link")
     hint_description = data.get("hint_description")
