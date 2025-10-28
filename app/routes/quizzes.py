@@ -1,7 +1,7 @@
 import asyncio
 import os
 from datetime import date, datetime
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import aiohttp
 from flask import Blueprint, request
@@ -15,6 +15,32 @@ bp = Blueprint("quizzes", __name__)
 
 CLOVA_API_URL = "https://clovastudio.apigw.ntruss.com/testapp/v1/chat/completions"
 ALLOWED_QUIZ_TYPES = {"select", "ox", "input"}
+
+
+_HINT_DESCRIPTION_SUPPORTED: Optional[bool] = None
+
+
+def _quizzes_supports_hint_description(connection) -> bool:
+    """Return whether the quizzes table includes the hint_description column."""
+
+    global _HINT_DESCRIPTION_SUPPORTED
+    if _HINT_DESCRIPTION_SUPPORTED is not None:
+        return _HINT_DESCRIPTION_SUPPORTED
+
+    with connection.cursor() as cur:
+        cur.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'quizzes'
+              AND column_name = 'hint_description'
+            LIMIT 1
+            """
+        )
+        _HINT_DESCRIPTION_SUPPORTED = cur.fetchone() is not None
+
+    return _HINT_DESCRIPTION_SUPPORTED
 
 
 def _normalize_input_payload(answers: Any, correct_answer: str) -> Dict[str, Any]:
@@ -259,24 +285,43 @@ def create_quiz():
         return make_response({"error": str(exc)}, 400)
 
     db = get_db()
+    supports_hint_description = _quizzes_supports_hint_description(db)
     with db.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO quizzes (question, quiz_type, correct_answer, answers, hint_link, hint_description, explanation, display_date)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """,
-            (
-                question,
-                quiz_type,
-                correct_answer,
-                normalized_answers,
-                hint_link,
-                hint_description,
-                explanation,
-                display_date,
-            ),
-        )
+        if supports_hint_description:
+            cur.execute(
+                """
+                INSERT INTO quizzes (question, quiz_type, correct_answer, answers, hint_link, hint_description, explanation, display_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    question,
+                    quiz_type,
+                    correct_answer,
+                    normalized_answers,
+                    hint_link,
+                    hint_description,
+                    explanation,
+                    display_date,
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO quizzes (question, quiz_type, correct_answer, answers, hint_link, explanation, display_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    question,
+                    quiz_type,
+                    correct_answer,
+                    normalized_answers,
+                    hint_link,
+                    explanation,
+                    display_date,
+                ),
+            )
         quiz_id = cur.fetchone()["id"]
 
     return make_response(
@@ -448,36 +493,63 @@ def update_quiz(quiz_id):
         return make_response({"error": str(exc)}, 400)
 
     db = get_db()
+    supports_hint_description = _quizzes_supports_hint_description(db)
     with db.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE quizzes
-            SET question = %s,
-                quiz_type = %s,
-                correct_answer = %s,
-                answers = %s,
-                hint_link = %s,
-                hint_description = %s,
-                explanation = %s
-            WHERE id = %s
-            RETURNING id, question, quiz_type, correct_answer, answers, hint_link, hint_description, explanation
-            """,
-            (
-                question,
-                quiz_type,
-                correct_answer,
-                normalized_answers,
-                hint_link,
-                hint_description,
-                explanation,
-                quiz_id,
-            ),
-        )
+        if supports_hint_description:
+            cur.execute(
+                """
+                UPDATE quizzes
+                SET question = %s,
+                    quiz_type = %s,
+                    correct_answer = %s,
+                    answers = %s,
+                    hint_link = %s,
+                    hint_description = %s,
+                    explanation = %s
+                WHERE id = %s
+                RETURNING id, question, quiz_type, correct_answer, answers, hint_link, hint_description, explanation
+                """,
+                (
+                    question,
+                    quiz_type,
+                    correct_answer,
+                    normalized_answers,
+                    hint_link,
+                    hint_description,
+                    explanation,
+                    quiz_id,
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE quizzes
+                SET question = %s,
+                    quiz_type = %s,
+                    correct_answer = %s,
+                    answers = %s,
+                    hint_link = %s,
+                    explanation = %s
+                WHERE id = %s
+                RETURNING id, question, quiz_type, correct_answer, answers, hint_link, explanation
+                """,
+                (
+                    question,
+                    quiz_type,
+                    correct_answer,
+                    normalized_answers,
+                    hint_link,
+                    explanation,
+                    quiz_id,
+                ),
+            )
         result = cur.fetchone()
         if not result:
             return make_response({"error": "quiz not found"}, 404)
 
     updated = dict(result)
+    if not supports_hint_description:
+        updated["hint_description"] = hint_description
     return make_response(updated)
 
 
@@ -586,17 +658,30 @@ def list_quizzes():
         description: 인증 실패
     """
     db = get_db()
+    supports_hint_description = _quizzes_supports_hint_description(db)
     with db.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, question, quiz_type, answers, hint_link, hint_description, explanation, display_date
-            FROM quizzes
-            ORDER BY display_date DESC, id DESC
-            """
-        )
-        quizzes = cur.fetchall()
+        if supports_hint_description:
+            cur.execute(
+                """
+                SELECT id, question, quiz_type, answers, hint_link, hint_description, explanation, display_date
+                FROM quizzes
+                ORDER BY display_date DESC, id DESC
+                """
+            )
+        else:
+            cur.execute(
+                """
+                SELECT id, question, quiz_type, answers, hint_link, explanation, display_date
+                FROM quizzes
+                ORDER BY display_date DESC, id DESC
+                """
+            )
+        quizzes = [dict(row) for row in cur.fetchall()]
+    if not supports_hint_description:
+        for quiz in quizzes:
+            quiz.setdefault("hint_description", None)
     for q in quizzes:
-        if isinstance(q["display_date"], date):
+        if isinstance(q.get("display_date"), date):
             q["display_date"] = q["display_date"].isoformat()
 
     return make_response(quizzes)
@@ -944,23 +1029,41 @@ def generate_quiz():
         correct_answer = str(correct_answer)
 
     db = get_db()
+    supports_hint_description = _quizzes_supports_hint_description(db)
     with db.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO quizzes (question, quiz_type, correct_answer, answers, hint_link, hint_description, explanation)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """,
-            (
-                question,
-                quiz_type,
-                str(correct_answer),
-                normalized_answers,
-                hint_link,
-                hint_description,
-                explanation,
-            ),
-        )
+        if supports_hint_description:
+            cur.execute(
+                """
+                INSERT INTO quizzes (question, quiz_type, correct_answer, answers, hint_link, hint_description, explanation)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    question,
+                    quiz_type,
+                    str(correct_answer),
+                    normalized_answers,
+                    hint_link,
+                    hint_description,
+                    explanation,
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO quizzes (question, quiz_type, correct_answer, answers, hint_link, explanation)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    question,
+                    quiz_type,
+                    str(correct_answer),
+                    normalized_answers,
+                    hint_link,
+                    explanation,
+                ),
+            )
         quiz_id = cur.fetchone()["id"]
 
     return make_response(
