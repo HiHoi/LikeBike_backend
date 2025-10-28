@@ -14,10 +14,11 @@ from ..utils.timezone import get_kst_today
 bp = Blueprint("quizzes", __name__)
 
 CLOVA_API_URL = "https://clovastudio.apigw.ntruss.com/testapp/v1/chat/completions"
-ALLOWED_QUIZ_TYPES = {"select", "ox", "input"}
+DEFAULT_ALLOWED_QUIZ_TYPES: Sequence[str] = ("select", "ox", "input")
 
 
 _HINT_DESCRIPTION_SUPPORTED: Optional[bool] = None
+_QUIZ_TYPE_LOOKUP_CACHE: Optional[Dict[str, str]] = None
 
 
 def _quizzes_supports_hint_description(connection) -> bool:
@@ -41,6 +42,93 @@ def _quizzes_supports_hint_description(connection) -> bool:
         _HINT_DESCRIPTION_SUPPORTED = cur.fetchone() is not None
 
     return _HINT_DESCRIPTION_SUPPORTED
+
+
+def _get_quiz_type_lookup(connection) -> Dict[str, str]:
+    """Return a mapping of lowercase quiz type values to their canonical form."""
+
+    global _QUIZ_TYPE_LOOKUP_CACHE
+    if _QUIZ_TYPE_LOOKUP_CACHE is not None:
+        return _QUIZ_TYPE_LOOKUP_CACHE
+
+    allowed_values: List[str] = []
+    try:
+        with connection.cursor() as cur:
+            cur.execute(
+                "SELECT unnest(enum_range(NULL::quiz_type_enum)) AS quiz_type"
+            )
+            rows = cur.fetchall()
+    except Exception:  # pragma: no cover - database introspection failure
+        rows = []
+
+    for row in rows:
+        value: Optional[str] = None
+        if isinstance(row, dict):
+            value = row.get("quiz_type")
+        elif hasattr(row, "keys"):
+            try:
+                value = row["quiz_type"]  # type: ignore[index]
+            except Exception:
+                value = None
+        elif isinstance(row, Sequence) and row and not isinstance(row, (str, bytes)):
+            value = row[0]
+        if value:
+            allowed_values.append(str(value))
+
+    if not allowed_values:
+        allowed_values = list(DEFAULT_ALLOWED_QUIZ_TYPES)
+
+    _QUIZ_TYPE_LOOKUP_CACHE = {value.lower(): value for value in allowed_values}
+    return _QUIZ_TYPE_LOOKUP_CACHE
+
+
+def _format_allowed_quiz_types(lookup: Dict[str, str]) -> str:
+    ordered = sorted(set(lookup.values()))
+    return f"[{', '.join(ordered)}]"
+
+
+def _normalize_quiz_type_value(
+    raw_value: Any,
+    connection,
+    *,
+    required: bool = True,
+    default: Optional[str] = None,
+) -> str:
+    lookup = _get_quiz_type_lookup(connection)
+    allowed_display = _format_allowed_quiz_types(lookup)
+
+    def _default_value() -> Optional[str]:
+        if default is None:
+            return None
+        return lookup.get(str(default).lower())
+
+    if raw_value is None:
+        fallback = _default_value() if not required else None
+        if fallback is not None:
+            return fallback
+        raise ValueError("quiz_type is required")
+
+    if not isinstance(raw_value, str):
+        fallback = _default_value() if not required else None
+        if fallback is not None:
+            return fallback
+        raise ValueError("quiz_type must be a string")
+
+    candidate = raw_value.strip()
+    if not candidate:
+        fallback = _default_value() if not required else None
+        if fallback is not None:
+            return fallback
+        raise ValueError("quiz_type is required")
+
+    canonical = lookup.get(candidate.lower())
+    if canonical is None:
+        fallback = _default_value() if not required else None
+        if fallback is not None:
+            return fallback
+        raise ValueError(f"quiz_type must be one of {allowed_display}")
+
+    return canonical
 
 
 def _normalize_input_payload(answers: Any, correct_answer: str) -> Dict[str, Any]:
@@ -234,9 +322,13 @@ def create_quiz():
         description: 관리자 권한 필요
     """
     data = request.get_json() or {}
+    db = get_db()
     question = data.get("question")
     correct_answer = data.get("correct_answer", "")
-    quiz_type = data.get("quiz_type", "select")
+    try:
+        quiz_type = _normalize_quiz_type_value(data.get("quiz_type"), db)
+    except ValueError as exc:
+        return make_response({"error": str(exc)}, 400)
     answers_payload = data.get("answers")
     hint_link = data.get("hint_link")
     hint_description = data.get("hint_description")
@@ -251,14 +343,6 @@ def create_quiz():
                 display_date = datetime.strptime(display_date, "%Y-%m-%d").date()
             except ValueError:
                 display_date = get_kst_today()
-
-    if quiz_type not in ALLOWED_QUIZ_TYPES:
-        return make_response(
-            {
-                "error": "quiz_type must be one of ['select', 'ox', 'input']"
-            },
-            400,
-        )
 
     correct_answer = str(correct_answer).strip()
 
@@ -284,7 +368,6 @@ def create_quiz():
     except ValueError as exc:
         return make_response({"error": str(exc)}, 400)
 
-    db = get_db()
     supports_hint_description = _quizzes_supports_hint_description(db)
     with db.cursor() as cur:
         if supports_hint_description:
@@ -453,23 +536,19 @@ def update_quiz(quiz_id):
         description: 퀴즈를 찾을 수 없음
     """
     data = request.get_json() or {}
+    db = get_db()
     question = data.get("question")
     correct_answer = data.get("correct_answer", "")
-    quiz_type = data.get("quiz_type") or "select"
+    try:
+        quiz_type = _normalize_quiz_type_value(data.get("quiz_type"), db)
+    except ValueError as exc:
+        return make_response({"error": str(exc)}, 400)
     answers_payload = data.get("answers")
     hint_link = data.get("hint_link")
     hint_description = data.get("hint_description")
     explanation = data.get("explanation")
     if not question or not correct_answer:
         return make_response({"error": "question and correct_answer required"}, 400)
-
-    if quiz_type not in ALLOWED_QUIZ_TYPES:
-        return make_response(
-            {
-                "error": "quiz_type must be one of ['select', 'ox', 'input']"
-            },
-            400,
-        )
 
     correct_answer = str(correct_answer).strip()
 
@@ -492,7 +571,6 @@ def update_quiz(quiz_id):
     except ValueError as exc:
         return make_response({"error": str(exc)}, 400)
 
-    db = get_db()
     supports_hint_description = _quizzes_supports_hint_description(db)
     with db.cursor() as cur:
         if supports_hint_description:
@@ -1003,13 +1081,16 @@ def generate_quiz():
     hint_link = result.get("hint_link")
     hint_description = result.get("hint_description")
     explanation = result.get("explanation")
-    quiz_type = result.get("quiz_type", "select")
+    db = get_db()
+    quiz_type = _normalize_quiz_type_value(
+        result.get("quiz_type"),
+        db,
+        required=False,
+        default="select",
+    )
 
     if not question or not correct_answer:
         return make_response({"error": "invalid response from Clova X"}, 502)
-
-    if quiz_type not in ALLOWED_QUIZ_TYPES:
-        quiz_type = "select"
 
     correct_answer = str(correct_answer).strip()
     if not correct_answer:
@@ -1028,7 +1109,6 @@ def generate_quiz():
         normalized_answers = []
         correct_answer = str(correct_answer)
 
-    db = get_db()
     supports_hint_description = _quizzes_supports_hint_description(db)
     with db.cursor() as cur:
         if supports_hint_description:
