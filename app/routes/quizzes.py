@@ -748,19 +748,29 @@ def today_quiz_status():
     today = get_kst_today()
     db = get_db()
     with db.cursor() as cur:
-        cur.execute("SELECT id FROM quizzes WHERE display_date = %s", (today,))
-        quiz = cur.fetchone()
-        if not quiz:
+        # 오늘 날짜에 노출되는 퀴즈 존재 여부를 먼저 확인합니다.
+        cur.execute("SELECT COUNT(*) AS total FROM quizzes WHERE display_date = %s", (today,))
+        quiz_count = cur.fetchone()["total"]
+        if quiz_count == 0:
             return make_response({"attempted": False, "is_correct": False})
 
+        # 같은 날짜에 여러 개의 퀴즈가 존재할 수 있으므로 오늘 날짜의 모든 퀴즈 ID를 대상으로 시도 여부를 확인합니다.
         cur.execute(
-            "SELECT bool_or(is_correct) AS is_correct, COUNT(*) > 0 AS attempted "
-            "FROM user_quiz_attempts WHERE user_id = %s AND quiz_id = %s",
-            (user_id, quiz["id"]),
+            """
+            SELECT
+                bool_or(uqa.is_correct) AS is_correct,
+                COUNT(uqa.id) > 0 AS attempted
+            FROM user_quiz_attempts AS uqa
+            WHERE uqa.user_id = %s
+              AND uqa.quiz_id = ANY (
+                  SELECT id FROM quizzes WHERE display_date = %s
+              )
+            """,
+            (user_id, today),
         )
         row = cur.fetchone()
-        attempted = row["attempted"]
-        is_correct = row["is_correct"] if attempted else False
+        attempted = row["attempted"] if row and row["attempted"] is not None else False
+        is_correct = row["is_correct"] if attempted and row["is_correct"] is not None else False
 
     return make_response({"attempted": attempted, "is_correct": is_correct})
 
