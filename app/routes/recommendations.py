@@ -8,6 +8,7 @@ from flask import Blueprint, Response, request
 from ..db import get_db
 from ..utils.auth import admin_required, get_current_user_id, jwt_required
 from ..utils.responses import make_response
+from ..utils.timezone import get_kst_week_start_for_sunday_reset
 from .storage import upload_file_to_ncp
 
 bp = Blueprint("recommendations", __name__)
@@ -287,13 +288,14 @@ def create_course_recommendation():
 
     # 주 2회 제한 (서버 시간 기준 일요일 00:00에 초기화)
     db = get_db()
+    week_start_utc = get_kst_week_start_for_sunday_reset()
     with db.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) as count FROM course_recommendations"
             " WHERE user_id = %s"
             " AND created_at >= date_trunc('week', CURRENT_TIMESTAMP + INTERVAL '1 day') - INTERVAL '1 day'"
             " AND status != 'rejected'",
-            (user_id,),
+            (user_id, week_start_utc),
         )
         result = cur.fetchone()
         if result and result["count"] >= 2:
