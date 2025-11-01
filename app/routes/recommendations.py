@@ -285,13 +285,13 @@ def create_course_recommendation():
     except ValueError as exc:
         return make_response({"error": str(exc)}, 400)
 
-    # 주 2회 제한
+    # 주 2회 제한 (서버 시간 기준 일요일 00:00에 초기화)
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) as count FROM course_recommendations"
             " WHERE user_id = %s"
-            " AND created_at >= date_trunc('week', CURRENT_DATE)"
+            " AND created_at >= date_trunc('week', CURRENT_TIMESTAMP + INTERVAL '1 day') - INTERVAL '1 day'"
             " AND status != 'rejected'",
             (user_id,),
         )
@@ -479,7 +479,8 @@ def week_course_recommendation_count():
     with db.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) as count FROM course_recommendations "
-            "WHERE user_id = %s AND created_at >= date_trunc('week', CURRENT_DATE) "
+            "WHERE user_id = %s "
+            "AND created_at >= date_trunc('week', CURRENT_TIMESTAMP + INTERVAL '1 day') - INTERVAL '1 day' "
             "AND status != 'rejected'",
             (user_id,),
         )

@@ -46,3 +46,5 @@ def get_kst_date_range_for_today():
     end_of_day_utc = end_of_day_kst.astimezone(timezone.utc)
     
     return start_of_day_utc, end_of_day_utc
+
+
