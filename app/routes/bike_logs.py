@@ -468,42 +468,61 @@ def create_bike_log_for_user(user_id):
     security:
       - JWT: []
       - AdminHeader: []
+    consumes:
+      - multipart/form-data
     parameters:
       - in: path
         name: user_id
         required: true
         type: integer
         description: 활동 기록을 생성할 사용자 ID
-      - in: body
-        name: body
+      - in: formData
+        name: description
+        type: string
         required: true
-        schema:
-          type: object
-          required:
-            - description
-          properties:
-            description:
-              type: string
-              description: 활동 설명
-            bike_photo_url:
-              type: string
-              description: 자전거 사진 URL
-            safety_gear_photo_url:
-              type: string
-              description: 안전 장비 사진 URL
-            verification_status:
-              type: string
-              enum: [pending, verified, rejected]
-              default: verified
-            points_awarded:
-              type: integer
-              description: 검증 완료 시 지급할 경험치 (기본값 30)
-            admin_notes:
-              type: string
-              description: 관리자 메모
-            started_at:
-              type: string
-              description: 활동 시작 시각 (ISO 8601)
+        description: 활동 설명
+      - in: formData
+        name: bike_photo
+        type: file
+        required: false
+        description: 자전거 사진 파일
+      - in: formData
+        name: safety_gear_photo
+        type: file
+        required: false
+        description: 안전 장비 사진 파일
+      - in: formData
+        name: bike_photo_url
+        type: string
+        required: false
+        description: 업로드 대신 사용할 자전거 사진 URL
+      - in: formData
+        name: safety_gear_photo_url
+        type: string
+        required: false
+        description: 업로드 대신 사용할 안전 장비 사진 URL
+      - in: formData
+        name: verification_status
+        type: string
+        required: false
+        enum: [pending, verified, rejected]
+        default: verified
+        description: 인증 상태
+      - in: formData
+        name: points_awarded
+        type: integer
+        required: false
+        description: 검증 완료 시 지급할 경험치 (기본값 30)
+      - in: formData
+        name: admin_notes
+        type: string
+        required: false
+        description: 관리자 메모
+      - in: formData
+        name: started_at
+        type: string
+        required: false
+        description: 활동 시작 시각 (ISO 8601)
     responses:
       201:
         description: 활동 기록 생성 성공
@@ -516,7 +535,10 @@ def create_bike_log_for_user(user_id):
       404:
         description: 사용자를 찾을 수 없음
     """
-    data = request.get_json() or {}
+    if request.is_json:
+        data = request.get_json() or {}
+    else:
+        data = request.form.to_dict()
     description = data.get("description")
 
     if not description:
@@ -535,6 +557,8 @@ def create_bike_log_for_user(user_id):
     started_at_value = None
     started_at = data.get("started_at")
     if started_at:
+        started_at = started_at.strip()
+    if started_at:
         try:
             started_at_value = datetime.fromisoformat(
                 started_at.replace("Z", "+00:00")
@@ -546,9 +570,27 @@ def create_bike_log_for_user(user_id):
 
     bike_photo_url = data.get("bike_photo_url")
     safety_gear_photo_url = data.get("safety_gear_photo_url")
+
+    bike_photo_file = request.files.get("bike_photo")
+    if bike_photo_file and bike_photo_file.filename:
+        bike_photo_url, error = upload_file_to_ncp(
+            bike_photo_file, "bike_logs/bike_photos"
+        )
+        if error:
+            return make_response({"error": f"자전거 사진 업로드 실패: {error}"}, 500)
+
+    safety_gear_photo_file = request.files.get("safety_gear_photo")
+    if safety_gear_photo_file and safety_gear_photo_file.filename:
+        safety_gear_photo_url, error = upload_file_to_ncp(
+            safety_gear_photo_file, "bike_logs/safety_gear"
+        )
+        if error:
+            return make_response({"error": f"안전 장비 사진 업로드 실패: {error}"}, 500)
     admin_notes = data.get("admin_notes", "")
 
     points_awarded_param = data.get("points_awarded")
+    if isinstance(points_awarded_param, str) and points_awarded_param.strip() == "":
+        points_awarded_param = None
     if verification_status == "verified":
         if points_awarded_param is None:
             points_awarded = 30
