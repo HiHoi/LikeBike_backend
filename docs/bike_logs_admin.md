@@ -11,16 +11,51 @@ LikeBike 관리자 패널에서는 이용자 대신 자전거 활동을 수기�
 
 ### 요청 본문
 
-```json
-{
-  "description": "필수. 활동 설명",
-  "bike_photo_url": "선택. 자전거 사진 URL",
-  "safety_gear_photo_url": "선택. 안전 장비 사진 URL",
-  "verification_status": "선택. pending/verified/rejected 중 하나 (기본 verified)",
-  "points_awarded": "선택. verified 상태일 때 지급할 경험치 (기본 30)",
-  "admin_notes": "선택. 관리자 메모",
-  "started_at": "선택. 활동 시작 시각 (ISO 8601)"
-}
+- **Content-Type**: `multipart/form-data`
+- 파일 업로드와 URL 전달을 모두 지원합니다. 둘 중 하나만 제공해도 됩니다.
+
+| 필드 | 형식 | 필수 | 설명 |
+| ---- | ---- | ---- | ---- |
+| `description` | text | 예 | 활동 설명 |
+| `bike_photo` | file | 아니오 | 자전거 사진 파일. URL과 중복 사용 불필요 |
+| `safety_gear_photo` | file | 아니오 | 안전 장비 사진 파일 |
+| `bike_photo_url` | text | 아니오 | 업로드 대신 사용할 자전거 사진 URL |
+| `safety_gear_photo_url` | text | 아니오 | 업로드 대신 사용할 안전 장비 사진 URL |
+| `verification_status` | text | 아니오 | `pending`\|`verified`\|`rejected` (기본 `verified`) |
+| `points_awarded` | integer | 아니오 | 검증 완료 시 지급할 경험치 (기본 30) |
+| `admin_notes` | text | 아니오 | 관리자 메모 |
+| `started_at` | text | 아니오 | 활동 시작 시각 (ISO 8601) |
+
+> JSON 본문(`application/json`)도 하위 호환으로 지원하지만, 파일 업로드가 필요한 경우에는 반드시 `multipart/form-data`를 사용해야 합니다.
+
+#### cURL 예시 — 파일 업로드
+
+```bash
+curl -X POST "https://api.likebike.local/admin/users/42/bike-logs" \
+  -H "Authorization: Bearer <ADMIN_JWT>" \
+  -H "X-Admin: true" \
+  -F "description=한강 야간 라이딩" \
+  -F "verification_status=verified" \
+  -F "points_awarded=30" \
+  -F "bike_photo=@/path/to/bike.jpg" \
+  -F "safety_gear_photo=@/path/to/helmet.jpg"
+```
+
+#### cURL 예시 — URL만 전달
+
+```bash
+curl -X POST "https://api.likebike.local/admin/users/42/bike-logs" \
+  -H "Authorization: Bearer <ADMIN_JWT>" \
+  -H "X-Admin: true" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "description": "출근 전 인증",
+        "bike_photo_url": "https://cdn.example.com/uploads/bike.jpg",
+        "safety_gear_photo_url": "https://cdn.example.com/uploads/helmet.jpg",
+        "verification_status": "verified",
+        "points_awarded": 30,
+        "admin_notes": "출근길 인증"
+      }'
 ```
 
 ### 응답
