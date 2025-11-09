@@ -56,6 +56,8 @@ LikeBike 백엔드 API는 Swagger UI를 통해 문서화되어 있으며, 쉽게
 - 보상 내역 조회
 - 사이클링 목표 관리
 - 사용자 통계 조회
+- 관리자 전용 활동 등록 (`POST /admin/users/{user_id}/bike-logs`)
+- 관리자 검증 (`POST /admin/bike-logs/{log_id}/verify`) 및 CSV 내보내기
 
 ### Course Recommendations (코스 추천)
 

@@ -1,5 +1,6 @@
+import base64
 import io
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -59,6 +60,11 @@ def admin_user(app):
 def create_fake_image():
     """테스트용 가짜 이미지 파일 생성"""
     return (io.BytesIO(b"fake image data"), "test_image.jpg")
+
+
+def create_fake_data_url():
+    encoded = base64.b64encode(b"fake image data").decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 @patch("app.routes.bike_logs.upload_file_to_ncp")
@@ -295,6 +301,136 @@ def test_get_pending_bike_logs_non_admin(client, test_user):
 
     res = client.get("/admin/bike-logs", headers=headers)
     assert res.status_code == 403
+
+
+@patch("app.routes.bike_logs.upload_data_url_image_to_ncp")
+def test_admin_create_bike_log_for_user(
+    mock_upload_data_url, client, app, admin_user, test_user
+):
+    """관리자가 자전거 활동 기록을 직접 생성할 수 있다"""
+    token = get_test_jwt_token(admin_user, "admin", "admin@example.com", is_admin=True)
+    headers = get_admin_headers(token)
+
+    mock_upload_data_url.side_effect = [
+        "https://example.com/bike.jpg",
+        "https://example.com/gear.jpg",
+    ]
+
+    payload = {
+        "description": "관리자 등록 라이딩",
+        "bike_photo": create_fake_data_url(),
+        "safety_gear_photo": create_fake_data_url(),
+        "verification_status": "verified",
+        "points_awarded": 45,
+        "admin_notes": "오프라인 이벤트 참여",
+    }
+
+    res = client.post(
+        f"/admin/users/{test_user}/bike-logs", json=payload, headers=headers
+    )
+
+    assert res.status_code == 201
+    data = res.get_json()["data"][0]
+    assert data["user_id"] == test_user
+    assert data["description"] == payload["description"]
+    assert data["bike_photo_url"] == "https://example.com/bike.jpg"
+    assert data["safety_gear_photo_url"] == "https://example.com/gear.jpg"
+    assert data["verification_status"] == "verified"
+    assert data["points_awarded"] == 45
+    assert data["admin_notes"] == payload["admin_notes"]
+    assert data["verified_at"] is not None
+    assert mock_upload_data_url.call_count == 2
+
+    with app.app_context():
+        db = get_db()
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT experience_points FROM users WHERE id = %s", (test_user,)
+            )
+            assert cur.fetchone()["experience_points"] == 45
+
+            cur.execute(
+                "SELECT COUNT(*) AS cnt FROM rewards WHERE user_id = %s AND source_type = %s",
+                (test_user, "bike_usage"),
+            )
+            assert cur.fetchone()["cnt"] == 1
+
+
+def test_admin_create_bike_log_pending_status(client, app, admin_user, test_user):
+    """대기 상태로 등록 시 경험치가 지급되지 않는다"""
+    token = get_test_jwt_token(admin_user, "admin", "admin@example.com", is_admin=True)
+    headers = get_admin_headers(token)
+
+    payload = {"description": "대기 기록", "verification_status": "pending"}
+
+    res = client.post(
+        f"/admin/users/{test_user}/bike-logs", json=payload, headers=headers
+    )
+
+    assert res.status_code == 201
+    data = res.get_json()["data"][0]
+    assert data["verification_status"] == "pending"
+    assert data["points_awarded"] == 0
+    assert data["verified_at"] is None
+
+
+def test_admin_create_bike_log_invalid_photo(client, admin_user, test_user):
+    """잘못된 base64 data URL은 400을 반환한다"""
+
+    token = get_test_jwt_token(admin_user, "admin", "admin@example.com", is_admin=True)
+    headers = get_admin_headers(token)
+
+    payload = {
+        "description": "유효하지 않은 사진",
+        "bike_photo": "not-a-valid-data-url",
+    }
+
+    res = client.post(
+        f"/admin/users/{test_user}/bike-logs", json=payload, headers=headers
+    )
+
+    assert res.status_code == 400
+    assert "bike_photo" in res.get_json()["data"][0]["error"]
+
+
+def test_admin_create_bike_log_invalid_status(client, admin_user, test_user):
+    """허용되지 않은 상태 값은 오류를 발생시킨다"""
+    token = get_test_jwt_token(admin_user, "admin", "admin@example.com", is_admin=True)
+    headers = get_admin_headers(token)
+
+    res = client.post(
+        f"/admin/users/{test_user}/bike-logs",
+        json={"description": "잘못된 상태", "verification_status": "unknown"},
+        headers=headers,
+    )
+
+    assert res.status_code == 400
+
+
+def test_admin_create_bike_log_missing_description(client, admin_user, test_user):
+    """설명을 입력하지 않으면 400을 반환한다"""
+    token = get_test_jwt_token(admin_user, "admin", "admin@example.com", is_admin=True)
+    headers = get_admin_headers(token)
+
+    res = client.post(
+        f"/admin/users/{test_user}/bike-logs", json={}, headers=headers
+    )
+
+    assert res.status_code == 400
+
+
+def test_admin_create_bike_log_user_not_found(client, admin_user):
+    """존재하지 않는 사용자에 대해 등록 시 404 반환"""
+    token = get_test_jwt_token(admin_user, "admin", "admin@example.com", is_admin=True)
+    headers = get_admin_headers(token)
+
+    res = client.post(
+        "/admin/users/999999/bike-logs",
+        json={"description": "없는 사용자"},
+        headers=headers,
+    )
+
+    assert res.status_code == 404
 
 
 def test_admin_bike_logs_pagination(client, app, admin_user, test_user):

@@ -1,7 +1,11 @@
+import base64
+import binascii
 import csv
 import io
 import os
+import re
 import uuid
+from datetime import datetime
 
 import boto3
 from botocore.exceptions import ClientError
@@ -36,12 +40,30 @@ s3_client = (
 )
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "bmp", "webp"}
+MIME_EXTENSION_MAP = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/bmp": "bmp",
+    "image/webp": "webp",
+}
+DATA_URL_PATTERN = re.compile(r"^data:(?P<mime>[\w\-\./\+]+);base64,(?P<data>.+)$", re.IGNORECASE)
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 def allowed_file(filename):
     """허용된 파일 확장자인지 확인"""
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+class ImageUploadError(Exception):
+    """Base64 이미지를 업로드할 때 발생한 예외"""
+
+    def __init__(self, message, status_code=400):
+        super().__init__(message)
+        self.status_code = status_code
+        self.message = message
 
 
 def upload_file_to_ncp(file, folder_name="bike_logs"):
@@ -92,6 +114,60 @@ def upload_file_to_ncp(file, folder_name="bike_logs"):
         return None, f"파일 업로드 실패: {str(e)}"
     except Exception as e:
         return None, f"알 수 없는 오류: {str(e)}"
+
+
+def upload_data_url_image_to_ncp(data_url: str, folder_name: str = "bike_logs") -> str:
+    """data URL(base64) 이미지를 NCP Object Storage에 업로드하고 URL 반환"""
+
+    if not s3_client:
+        raise ImageUploadError("NCP Object Storage 설정이 완료되지 않았습니다", 500)
+
+    if not data_url or not isinstance(data_url, str):
+        raise ImageUploadError("유효한 data URL 문자열을 제공해야 합니다.")
+
+    match = DATA_URL_PATTERN.match(data_url.strip())
+    if not match:
+        raise ImageUploadError(
+            "유효한 data URL 형식이 아닙니다. 'data:<mime>;base64,<data>' 형식을 사용하세요."
+        )
+
+    mime_type = match.group("mime").lower()
+    base64_payload = match.group("data").strip()
+
+    if mime_type not in MIME_EXTENSION_MAP:
+        raise ImageUploadError(
+            "지원하지 않는 이미지 형식입니다. 허용: "
+            + ", ".join(sorted(MIME_EXTENSION_MAP.keys()))
+        )
+
+    try:
+        image_bytes = base64.b64decode(base64_payload, validate=True)
+    except (binascii.Error, ValueError):
+        raise ImageUploadError("이미지 데이터가 올바른 base64 형식이 아닙니다.")
+
+    if len(image_bytes) > MAX_FILE_SIZE:
+        raise ImageUploadError(
+            f"파일 크기가 너무 큽니다. 최대 {MAX_FILE_SIZE // (1024 * 1024)}MB까지 지원합니다."
+        )
+
+    file_extension = MIME_EXTENSION_MAP[mime_type]
+    object_key = f"{folder_name}/{uuid.uuid4().hex}.{file_extension}"
+
+    try:
+        file_stream = io.BytesIO(image_bytes)
+        file_stream.seek(0)
+        s3_client.upload_fileobj(
+            file_stream,
+            NCP_BUCKET_NAME,
+            object_key,
+            ExtraArgs={"ContentType": mime_type, "ACL": "public-read"},
+        )
+    except ClientError as e:
+        raise ImageUploadError(f"파일 업로드 실패: {str(e)}", 500)
+    except Exception as e:  # pragma: no cover - 예기치 못한 오류 로깅 목적
+        raise ImageUploadError(f"알 수 없는 오류: {str(e)}", 500)
+
+    return f"{NCP_ENDPOINT}/{NCP_BUCKET_NAME}/{object_key}"
 
 
 @bp.route("/users/bike-logs", methods=["POST"])
@@ -452,6 +528,219 @@ def get_pending_bike_logs():
         logs = cur.fetchall()
 
     return make_response(logs)
+
+
+@bp.route("/admin/users/<int:user_id>/bike-logs", methods=["POST"])
+@admin_required
+def create_bike_log_for_user(user_id):
+    """
+    관리자 자전거 활동 기록 생성
+    ---
+    tags:
+      - Bike Logs
+    summary: 특정 사용자를 위한 자전거 활동 기록을 관리자 권한으로 생성
+    description: 관리자가 사용자의 활동 설명 및 인증 상태를 직접 등록합니다.
+    security:
+      - JWT: []
+      - AdminHeader: []
+    parameters:
+      - in: path
+        name: user_id
+        required: true
+        type: integer
+        description: 활동 기록을 생성할 사용자 ID
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - description
+          properties:
+            description:
+              type: string
+              description: 활동 설명
+            bike_photo:
+              type: string
+              description: |
+                자전거 사진 data URL(base64). 예: "data:image/png;base64,iVBORw0KGgo..."
+            safety_gear_photo:
+              type: string
+              description: |
+                안전 장비 사진 data URL(base64). 예: "data:image/jpeg;base64,/9j/4AAQSkZJRg..."
+            verification_status:
+              type: string
+              enum: [pending, verified, rejected]
+              default: verified
+            points_awarded:
+              type: integer
+              description: 검증 완료 시 지급할 경험치 (기본값 30)
+            admin_notes:
+              type: string
+              description: 관리자 메모
+            started_at:
+              type: string
+              description: 활동 시작 시각 (ISO 8601)
+    responses:
+      201:
+        description: 활동 기록 생성 성공
+      400:
+        description: 잘못된 요청
+      401:
+        description: 인증 실패
+      403:
+        description: 관리자 권한 필요
+      404:
+        description: 사용자를 찾을 수 없음
+    """
+    data = request.get_json() or {}
+    description = data.get("description")
+
+    if not description:
+        return make_response({"error": "description required"}, 400)
+
+    verification_status = data.get("verification_status", "verified")
+    allowed_statuses = {"pending", "verified", "rejected"}
+    if verification_status not in allowed_statuses:
+        return make_response(
+            {
+                "error": "verification_status must be one of pending, verified, rejected"
+            },
+            400,
+        )
+
+    started_at_value = None
+    started_at = data.get("started_at")
+    if started_at:
+        try:
+            started_at_value = datetime.fromisoformat(
+                started_at.replace("Z", "+00:00")
+            )
+        except ValueError:
+            return make_response(
+                {"error": "started_at must be ISO 8601 format"}, 400
+            )
+
+    bike_photo_data_url = data.get("bike_photo")
+    safety_gear_photo_data_url = data.get("safety_gear_photo")
+    admin_notes = data.get("admin_notes", "")
+
+    points_awarded_param = data.get("points_awarded")
+    if verification_status == "verified":
+        if points_awarded_param is None:
+            points_awarded = 30
+        else:
+            try:
+                points_awarded = int(points_awarded_param)
+            except (TypeError, ValueError):
+                return make_response(
+                    {"error": "points_awarded must be an integer"}, 400
+                )
+            if points_awarded < 0:
+                return make_response(
+                    {"error": "points_awarded must be non-negative"}, 400
+                )
+    else:
+        if points_awarded_param not in (None, 0):
+            return make_response(
+                {
+                    "error": "points_awarded can only be set when verification_status is 'verified'"
+                },
+                400,
+            )
+        points_awarded = 0
+
+    admin_id = get_current_user_id()
+
+    try:
+        bike_photo_url = (
+            upload_data_url_image_to_ncp(bike_photo_data_url)
+            if bike_photo_data_url
+            else None
+        )
+    except ImageUploadError as exc:
+        return make_response({"error": f"bike_photo: {exc.message}"}, exc.status_code)
+
+    try:
+        safety_gear_photo_url = (
+            upload_data_url_image_to_ncp(safety_gear_photo_data_url)
+            if safety_gear_photo_data_url
+            else None
+        )
+    except ImageUploadError as exc:
+        return make_response({"error": f"safety_gear_photo: {exc.message}"}, exc.status_code)
+
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+        if not cur.fetchone():
+            return make_response({"error": "user not found"}, 404)
+
+        cur.execute(
+            """
+            INSERT INTO bike_usage_logs (
+                user_id, description, bike_photo_url, safety_gear_photo_url,
+                verification_status, verified_by_admin_id, admin_notes,
+                points_awarded, started_at, verified_at
+            )
+            VALUES (
+                %s, %s, %s, %s, %s,
+                CASE WHEN %s IN ('verified', 'rejected') THEN %s ELSE NULL END,
+                %s, %s,
+                COALESCE(%s, CURRENT_TIMESTAMP),
+                CASE WHEN %s IN ('verified', 'rejected') THEN CURRENT_TIMESTAMP ELSE NULL END
+            )
+            RETURNING id, user_id, description, bike_photo_url, safety_gear_photo_url,
+                      verification_status, points_awarded, admin_notes,
+                      started_at, verified_at, created_at
+            """,
+            (
+                user_id,
+                description,
+                bike_photo_url,
+                safety_gear_photo_url,
+                verification_status,
+                verification_status,
+                admin_id,
+                admin_notes,
+                points_awarded,
+                started_at_value,
+                verification_status,
+            ),
+        )
+
+        log = cur.fetchone()
+
+        if verification_status == "verified" and points_awarded > 0:
+            cur.execute(
+                """
+                UPDATE users
+                SET experience_points = experience_points + %s
+                WHERE id = %s
+                """,
+                (points_awarded, user_id),
+            )
+
+            cur.execute(
+                """
+                INSERT INTO rewards (
+                    user_id, source_type, source_id, points, experience_points,
+                    reward_reason, status
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    user_id,
+                    "bike_usage",
+                    log["id"],
+                    0,
+                    points_awarded,
+                    "자전거 타기 인증 (관리자 등록)",
+                    "completed",
+                ),
+            )
+
+    return make_response(dict(log), 201)
 
 
 @bp.route("/admin/bike-logs/export", methods=["GET"])
