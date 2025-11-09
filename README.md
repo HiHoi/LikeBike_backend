@@ -82,6 +82,15 @@ Swagger UI를 통해 모든 API를 손쉽게 테스트할 수 있습니다.
 - **코스 추천**: 주 2회만 등록 가능
   - 이번 주 몇 회 등록했는지 확인하려면 `/users/course-recommendations/week/count` 엔드포인트를 호출합니다.
 
+### 관리자 자전거 활동 등록
+
+- **신규 관리자 엔드포인트**: `POST /admin/users/{user_id}/bike-logs`
+  - 관리자는 특정 사용자의 라이딩 활동을 대신 등록할 수 있습니다.
+  - 요청 본문에는 `description`이 필수이며, 선택적으로 사진 URL, `verification_status`, `points_awarded`, `admin_notes`, `started_at`을 전달할 수 있습니다.
+  - 상태가 `verified`인 경우 기본 경험치 30점을 즉시 지급하고, `points_awarded` 값을 명시하면 해당 경험치로 덮어씁니다.
+  - `verification_status`가 `pending` 또는 `rejected`인 경우 경험치가 지급되지 않으며, 이후 `/admin/bike-logs/{log_id}/verify`로 검증할 수 있습니다.
+- **관련 문서**: [docs/bike_logs_admin.md](./docs/bike_logs_admin.md)
+
 ### 퀴즈 관련 변경 사항
 
 - 각 퀴즈는 `explanation` 필드로 정답 해설을 포함합니다.
