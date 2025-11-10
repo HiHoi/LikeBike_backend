@@ -43,6 +43,26 @@ def test_register_user(client, monkeypatch, app):
     assert data["profile_image_url"] == "https://k.kakaocdn.net/dn/test_profile.jpg"
 
 
+def test_register_user_apple(client, monkeypatch, app):
+    """애플 로그인 등록/로그인 테스트"""
+
+    async def fake_verify(token: str):
+        return {
+            "sub": "apple_user_123",
+            "email": "apple@test.com",
+            "name": "apple_user",
+        }
+
+    monkeypatch.setattr("app.routes.users.verify_apple_identity_token", fake_verify)
+
+    res = client.post("/users/apple", json={"identity_token": "token"})
+    assert res.status_code == 201
+    data = res.get_json()["data"][0]
+    assert "access_token" in data
+    assert data["username"] == "apple_user"
+    assert data["email"] == "apple@test.com"
+
+
 def test_update_user_profile(client, monkeypatch, app):
     """사용자 프로필 수정 테스트 (JWT 인증 필요)"""
 
