@@ -38,8 +38,17 @@ def test_route():
 # 모든 라우트 블루프린트를 등록하는 함수
 def register_routes(app):
     """애플리케이션에 모든 라우트를 등록"""
-    from . import (bike_logs, community, news, quizzes, recommendations,
-                   rewards, storage, users)
+    from . import (
+        activity_summary,
+        bike_logs,
+        community,
+        news,
+        quizzes,
+        recommendations,
+        rewards,
+        storage,
+        users,
+    )
 
     app.register_blueprint(main)
     app.register_blueprint(users.bp)
@@ -50,3 +59,4 @@ def register_routes(app):
     app.register_blueprint(storage.bp)
     app.register_blueprint(recommendations.bp)
     app.register_blueprint(rewards.bp)
+    app.register_blueprint(activity_summary.bp)
