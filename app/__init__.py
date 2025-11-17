@@ -25,6 +25,7 @@ from flask_cors import CORS
 
 from . import db
 from .routes import main as main_blueprint
+from .routes.activity_summary import bp as activity_summary_bp
 from .routes.bike_logs import bp as bike_logs_bp
 from .routes.community import bp as community_bp
 from .routes.news import bp as news_bp
@@ -188,6 +189,7 @@ def create_app(test_config=None):
     app.register_blueprint(storage_bp)
     app.register_blueprint(recommendations_bp)
     app.register_blueprint(rewards_bp)
+    app.register_blueprint(activity_summary_bp)
 
     # Swagger 설정
     swagger_config = {
